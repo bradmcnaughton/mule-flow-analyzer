@@ -14,6 +14,8 @@ def main():
     project_path = args.project_path
     properties_hierarchy = None
 
+    
+
     if args.properties_hierarchy:
         prop_files = args.properties_hierarchy.split(',')
         properties_hierarchy = PropertyHierarchy({i: filename.strip() for i, filename in enumerate(prop_files)})
@@ -39,7 +41,7 @@ def main():
             else:
                 print("No property files discovered.")
         else:
-            # Properties hierarchy was provided, but not implemented yet
+            # TODO: Properties hierarchy was provided, but not implemented yet
             pass  # Not Implemented
 
         # Further analysis or operations can be added here

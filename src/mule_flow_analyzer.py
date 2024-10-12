@@ -1,12 +1,76 @@
+from enum import Enum
 import os
 import xmltodict
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, NewType
 import yaml
 import re
+from collections import OrderedDict
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
+
+# Enum for the Output Format
+OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
+
+from typing import List, Optional, Dict
+
+class MuleFlowElement:
+    def __init__(self, 
+                 tag: str, 
+                 attributes: Dict[str, str] = None, 
+                 children: List['MuleFlowElement'] = None, 
+                 processes: List['MuleFlowElement'] = None, 
+                 notes: str = "", 
+                 standalone: bool = True, 
+                 error_handler_ref: Optional[str] = None):
+        self.tag = tag
+        self.attributes = attributes or {}
+        
+        self.children = children or []
+        self.processes = processes or []
+        
+        # For every child that has a namespace prefix the same as the current element, add it to the processes list
+        if ':' in self.tag:
+            for child in self.children:
+                if ':' in child.tag:
+                    self.processes.append(child)
+
+        self.notes = notes
+        self.standalone = standalone
+        self.error_handler_ref = error_handler_ref
+
+    def __str__(self):
+        # A Case Statement to handle stringifying the tag based on the key attributes of the element
+        # Defaults to name if no other identifier is found
+        # Extend as needed
+        if self.tag == 'set-variable':
+            identifier = self.attributes.get('variableName') or ''
+        else:
+            identifier = self.attributes.get('name') or self.attributes.get('doc:name') or ''
+        return f"{self.tag} [{identifier}]" if identifier else self.tag
+
+    def add_child(self, child: 'MuleFlowElement'):
+        self.children.append(child)
+
+    def set_note(self, note: str):
+        self.notes = note
+
+    def set_error_handler_ref(self, ref: str):
+        self.error_handler_ref = ref
+
+    """
+    Get all flows in the current element
+    If flow_name is provided, return only the flow with that name
+    """
+    def get_flows(self, flow_name: str = None) -> List['MuleFlowElement']:
+        flows = []
+        for child in self.children:
+            if child.tag in ['flow']:
+                if flow_name is None or child.attributes.get('name') == flow_name:
+                    flows.append(child)
+        return flows
 
 class MuleFlowAnalyzer:
     def __init__(self, project_path: str, property_files: PropertyHierarchy = None):
@@ -25,7 +89,10 @@ class MuleFlowAnalyzer:
         }
 
         # Output Type Flag - will be replaced with actual input flag later
-        self.output_format = "SEQUENCE" # alternative "TEXT"
+        self.output_format = OutputFormat.SEQUENCE
+
+        # Tags to skip when printing the flow structure
+        self.skip_tags = ["flow-ref", "logger", "tracing:set-logging-variable"]
 
         self._validate_project_path()
         self._discover_project_files()
@@ -69,7 +136,56 @@ class MuleFlowAnalyzer:
             if self._is_mule_file(xml_file):
                 relative_path = xml_file.relative_to(self.project_path)
                 with xml_file.open('r') as f:
-                    self.project_files[str(relative_path)] = xmltodict.parse(f.read())
+                    self.project_files[str(relative_path)] = f.read()
+                pass
+
+
+    # Recursive Helper Function to convert XML Text to a MuleFlowElement
+    def xml_to_mule_flow_element(self, xml_string):
+        def create_mule_flow_element(element):
+            def process_tag_or_attribute(name):
+                parts = name.split('}')
+                if len(parts) > 1:
+                    namespace = parts[0].split('/')[-1]
+                    tag = parts[-1]
+                    # In line with Studio markup, ignore core namespace in tag names
+                    if namespace != 'core':
+                        return f"{namespace}:{tag}"
+                    else:
+                        return tag
+                return name
+
+            tag = process_tag_or_attribute(element.tag)
+            attributes = {process_tag_or_attribute(k): v for k, v in element.attrib.items()}
+            
+            children = []
+            for child in element:
+                children.append(create_mule_flow_element(child))
+            
+            # Check if the element has an error-handler
+            error_handler_ref = None
+            for child in children:
+                if child.tag == 'error-handler':
+                    error_handler_ref = child.attributes.get('ref')
+                    children.remove(child)
+                    break
+
+            # Remove any children that have no attributes, content, or children
+            children = [child for child in children if child.attributes or child.notes or child.children]
+            
+            return MuleFlowElement(
+                tag=tag,
+                attributes=attributes,
+                children=children,
+                error_handler_ref=error_handler_ref
+            )
+
+        tree = ET.fromstring(xml_string)
+        
+        if tree is not None:
+            return create_mule_flow_element(tree)
+        else:
+            raise ValueError("No 'mule' element found in the XML.")
 
     def _populate_properties_hierarchy(self):
         resources_dir = Path(self.project_path) / "src" / "main" / "resources"
@@ -139,97 +255,61 @@ class MuleFlowAnalyzer:
         # Process the supplied properties files and get all keys
         self._discover_properties_keys()
 
-        # Remove Unneeded Elements from the XML
-        unneeded_elements = ["logger", "error-handler"]
+        # 1. Replace all property keys in the XML files with the values from the properties files
         for xml_file, xml_content in self.project_files.items():
-            self.project_files[xml_file] = self._remove_unneeded_elements(xml_content, unneeded_elements)
-
-        # Replace all property keys in the XML files with the values from the properties files
-        for xml_file, xml_content in self.project_files.items():
-            # Process the root element of the XML structure
+            # Process the XML structure in its raw form
+            # Replace all property keys in the XML with the values from the properties files
             self._process_xml_structure_replace_placeholders(xml_content)
 
-        # Find all Flow Refs and replace them with the actual flow content
+        # 2. Convert the XML structure to a MuleFlowElement
+        for xml_file, xml_content in self.project_files.items():
+            self.project_files[xml_file] = self.xml_to_mule_flow_element(xml_content)
+
+        # 3. Find all Flow Refs and insert the actual flow content
         self._process_flow_refs()
 
 
-    def _print_flow_structures(self, xml_file, xml_content):
-        mule_element = xml_content.get('mule', {})
-        flows = mule_element.get('flow', [])
+    def print_flow_structures(self, xml_file: str, flow_name: str = None):
+        """
+        Print the structure of flows in the given XML file.
 
-        # Ensure flows and sub_flows are lists
-        flows = [flows] if isinstance(flows, dict) else (flows or [])
+        This function processes and prints the structure of all flows found in the specified XML file.
+        If a flow name is provided, it will only print the structure of that specific flow.
 
-        # Process all flows
+        Args:
+            xml_file (str): The path to the XML file containing the flows.
+            flow_name (str, optional): The name of a specific flow to print. If None, all flows are printed.
+
+        Returns:
+            None
+        """
+        mule_flow_element = self.project_files[xml_file]
+        flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
+
+        # Process all flows in the file
         if len(flows) > 0:
-            syntax_list = []
+            print(f"Processing {xml_file}")
             for flow in flows:
-                if self.output_format == "TEXT":
-                    print(f"Processing {xml_file}")
-                flow_name = flow.get('@name', 'Unnamed Flow')
-                if self.output_format == "TEXT":
-                    print(f"Flow: {flow_name}")
-                self._print_element_structure(flow, 1, syntax_list)
-                if self.output_format == "TEXT":
-                    print()  # Add a blank line after each flow
+                # Initial Depth of 1
+                depth = 0
 
-            if self.output_format == "SEQUENCE":
-                # Generate the syntax for the sequence diagram
-                seq_diagram_syntax_list = self.generate_sequence_diagram_syntax(syntax_list, flow_name)
-                # Print the syntax for the sequence diagram
-                #for line in seq_diagram_syntax_list:
-                for line in syntax_list:
-                    print(line)
-                    # Add a blank line after each line of the sequence diagram
-                    print()
-
-            if self.output_format == "TEXT":
-                print()  # Add an extra blank line after processing all flows and sub-flows in this file
-
-    def _print_element_structure(self, element, depth, syntax_list):
-        if isinstance(element, dict):
-            for tag, content in element.items():
-                if tag.startswith('@'):  # Skip attributes
-                    continue
+                current_flow_name = flow.attributes.get('name') or 'Unnamed Flow'
+                print(f"Flow: {current_flow_name}")
                 
-                indent = "  " * depth
-                doc_name = element.get('@doc:name', '')
-                doc_name_str = f" [{doc_name}]" if doc_name else ''
-                                
-                if self.output_format == "TEXT":
-                    print(f"{indent}{tag}{doc_name_str}")
-                elif self.output_format == "SEQUENCE":
-                    syntax_list.append(f"{indent}{tag}{doc_name_str}")
-                if isinstance(content, (dict, list)):
-                    self._print_element_structure(content, depth + 1, syntax_list)
-        elif isinstance(element, list):
-            for item in element:
-                self._print_element_structure(item, depth, syntax_list)
+                # Print Element Structure (Regardless of output format)
+                self._print_element_structure(flow, depth)
+                
+                print()  # Add a blank line after each flow for readability
+            print()  # Add an extra blank line after processing all flows and sub-flows in this file
 
+    def _print_element_structure(self, element:MuleFlowElement, depth:int):
+        indent = "  " * depth
 
-    def _remove_unneeded_elements(self, xml_content, unneeded_elements):
-        def remove_elements(element):
-            if isinstance(element, dict):
-                for tag in list(element.keys()):
-                    if tag in unneeded_elements:
-                        del element[tag]
-                    elif isinstance(element[tag], (dict, list)):
-                        remove_elements(element[tag])
-            elif isinstance(element, list):
-                for item in element:
-                    if isinstance(item, dict):
-                        # Remove unneeded elements from the dict
-                        for tag in unneeded_elements:
-                            if tag in item:
-                                del item[tag]
-                        # Recursively process remaining elements
-                        remove_elements(item)
-
-        # Create a deep copy of the xml_content to avoid modifying the original
-        import copy
-        xml_content_copy = copy.deepcopy(xml_content)
-        remove_elements(xml_content_copy)
-        return xml_content_copy
+        if element.tag not in self.skip_tags:                   
+            print(f"{indent}{element}")
+            depth += 1
+        for child in element.children:
+            self._print_element_structure(child, depth)
 
     def _process_flow_refs(self):
         flow_cache = {}
@@ -238,51 +318,38 @@ class MuleFlowAnalyzer:
             if name in flow_cache:
                 return flow_cache[name]
 
-            for content in self.project_files.values():
-                flows = content.get('mule', {}).get('flow', [])
-                sub_flows = content.get('mule', {}).get('sub-flow', [])
-                
-                for flow in (flows if isinstance(flows, list) else [flows]) + (sub_flows if isinstance(sub_flows, list) else [sub_flows]):
-                    if flow.get('@name') == name:
-                        flow_cache[name] = flow
-                        return flow
+            for mule_element in self.project_files.values():
+                # This only finds flows and sub-flows at the root level (e.g. mule tag)
+                for mule_child_element in mule_element.children:
+                    if mule_child_element.tag in ['flow', 'sub-flow']:
+                        if mule_child_element.attributes.get('name') == name:
+                            flow_cache[name] = mule_child_element
+                            return mule_child_element
             return None
 
-        def replace_flow_refs(element):
-            if isinstance(element, dict):
-                for tag, content in list(element.items()):  # Use list() to avoid runtime error when modifying dict
-                    if tag == 'flow-ref':
-                        if isinstance(content, list):
-                            new_content = []
-                            for flow_ref in content:
-                                ref_name = flow_ref.get('@name')
-                                if ref_name:
-                                    referenced_flow = find_flow(ref_name)
-                                    if referenced_flow:
-                                        replace_flow_refs(referenced_flow)
-                                        new_content.append(referenced_flow)
-                                    else:
-                                        new_content.append(flow_ref)
-                                else:
-                                    new_content.append(flow_ref)
-                            element[tag] = new_content
-                        else:
-                            ref_name = content.get('@name')
-                            if ref_name:
-                                referenced_flow = find_flow(ref_name)
-                                if referenced_flow:
-                                    replace_flow_refs(referenced_flow)
-                                    element[tag] = referenced_flow
-                    elif isinstance(content, (dict, list)):
-                        replace_flow_refs(content)
-            elif isinstance(element, list):
-                for item in element:
-                    replace_flow_refs(item)
+        def replace_flow_refs(element:MuleFlowElement):
+            if element.tag == 'flow-ref':
+                flow_ref_name = element.attributes.get('name')
+                referenced_flow = find_flow(flow_ref_name)
+                if referenced_flow:
+                    # Ensure the element has a "children" property
+                    if len(element.children) == 0:
+                        element.children = []
+                    # Append the referenced flow with the actual flow content
+                    # Ordering doesn't matter as flow-refs have no children
+                    element.add_child(referenced_flow)
+                else:
+                    raise ValueError(f"Flow Ref not found in project: {flow_ref_name}")
+            else:
+                if len(element.children) > 0:
+                    for child in element.children:
+                        replace_flow_refs(child)
+            
+            return element
 
         # Process all files in self.project_files
-        for xml_file, xml_content in self.project_files.items():
-            replace_flow_refs(xml_content)
-            self.project_files[xml_file] = xml_content
+        for xml_file, mule_flow_element in self.project_files.items():
+            self.project_files[xml_file] = replace_flow_refs(mule_flow_element)
 
     def _contains_placeholder(self, text):
         return ('${' in text and '}' in text) or ('Mule::p(' in text) or ('p(' in text and ("'" in text or '"' in text))
@@ -341,115 +408,27 @@ class MuleFlowAnalyzer:
             for item in element:
                 self._process_xml_structure_replace_placeholders(item, indent)
         
-
-
-    """
-    E.G.
-    VM->Mule Application: VM Listener Trigger
-    Mule Application->Email Service: Send Email
-    Email Service->Email Service: Set To Addresses
-    Email Service->Email Service: Set Reply-To Addresses
-    Email Service->Email Service: Set Email Body
-    Email Service-->Mule Application: Email Sent
-    Mule Application-->VM: Response
-
-
-    
-    """
-
-    def generate_sequence_diagram_syntax(self, flow_lines, flow_name:str=None):
-        seq_diagram_syntax_list = []
-
-        current_actor = "Mule Application"  # Default actor for top-level operations
-        previous_actor = None
-        actor_stack = []  # To track nested actors based on indentation levels
-        indent_level = 0
-
-        if flow_name:
-            seq_diagram_syntax_list.append(f"title {flow_name}")
-
-        for line in flow_lines:
-            stripped_line = line.strip()
-
-            # Calculate the indentation level to understand the nesting
-            new_indent_level = (len(line) - len(stripped_line)) // 2
-
-            # If the new indent level is greater than the current, it's a nested flow
-            if new_indent_level > indent_level:
-                actor_stack.append(current_actor)
-                current_actor = stripped_line
-                seq_diagram_syntax_list.append(f"{current_actor}->Mule Application: {flow_name}")
-
-
-            # Handle 'Flow' (reset actors stack for a new flow)
-            if line.startswith("Flow:"):
-                flow_name = line.split(":")[1].strip()
-                seq_diagram_syntax_list.append(f"Client->Mule Application: {flow_name}")
-
-            # Handle 'vm:listener' and 'flow-ref' as flow steps
-            elif line.startswith("vm:listener"):
-                seq_diagram_syntax_list.append("VM->Mule Application: VM Listener Trigger")
-
-            elif line.startswith("flow-ref"):
-                seq_diagram_syntax_list.append(f"Mule Application->Mule Application: {line}")
-
-            # Handle database interactions
-            elif line.startswith("db:"):
-                db_action = line.split(":")[1].strip()
-                if db_action == "stored-procedure":
-                    seq_diagram_syntax_list.append(f"Mule Application->Database: Call stored procedure ({line.split()[1]})")
-                elif db_action == "select":
-                    seq_diagram_syntax_list.append(f"Mule Application->Database: Select from database ({line})")
-
-            # Handle HTTP requests (like POST or GET)
-            elif line.startswith("http:request"):
-                seq_diagram_syntax_list.append("Mule Application->HTTP API: POST /completions (Set headers and body)")
-
-            # Handle email sending actions
-            elif line.startswith("email:send"):
-                seq_diagram_syntax_list.append("Mule Application->Email Service: Send Email")
-            elif line.startswith("email:to-addresses"):
-                seq_diagram_syntax_list.append("Email Service->Email Service: Set To Addresses")
-            elif line.startswith("email:reply-to-addresses"):
-                seq_diagram_syntax_list.append("Email Service->Email Service: Set Reply-To Addresses")
-            elif line.startswith("email:body"):
-                seq_diagram_syntax_list.append("Email Service->Email Service: Set Email Body")
-
-            # Handle payload setting or variable setting in MuleSoft
-            elif line.startswith("set-variable"):
-                seq_diagram_syntax_list.append(f"Mule Application->Mule Application: {line}")
-            elif line.startswith("ee:transform"):
-                seq_diagram_syntax_list.append(f"Mule Application->Mule Application: {line}")
-            elif line.startswith("set-payload"):
-                seq_diagram_syntax_list.append("Mule Application->Mule Application: Set Payload")
-
-            # Handle async operations
-            elif line.startswith("async"):
-                seq_diagram_syntax_list.append("Mule Application->Mule Application: Async Operation")
-
-            # Handle VM publish (e.g., publish to email queue)
-            elif line.startswith("vm:publish"):
-                seq_diagram_syntax_list.append("Mule Application->Email Queue: Publish to Email Queue")
-
-            # Handle conditional logic (e.g., "when" and "otherwise")
-            elif line.startswith("when"):
-                condition = line.split("[")[1].split("]")[0].strip()
-                seq_diagram_syntax_list.append(f"alt {condition}")
-            elif line.startswith("otherwise"):
-                seq_diagram_syntax_list.append("else")
-
-            # Handle end of alternate paths (end of conditions)
-            elif line.startswith("end"):
-                seq_diagram_syntax_list.append("end")
-
-        # Return the final syntax list
-        return seq_diagram_syntax_list
-
-
     def analyze_mule_flows(self):
         self._prepare_analysis()
 
         # Print the flow and sub-flow structures
         for xml_file, xml_content in self.project_files.items():
-            # Print flow and sub-flow structures
-            self._print_flow_structures(xml_file, xml_content)
+            if self.output_format == OutputFormat.TEXT:
+                # Print flow and sub-flow structures
+                self.print_flow_structures(xml_file)
+            elif self.output_format == OutputFormat.SEQUENCE:
+                self.generate_sequence_diagram(xml_file)
+
+    def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
+        
+        mule_flow_element = self.project_files[xml_file]
+        flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
+        
+        from src.sequence_diagram_generator import SequenceDiagramGenerator
+        mule_sequence_diagram_generator = SequenceDiagramGenerator()
+
+        for flow in flows:
+            diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
+            image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
+            print(f"Generated {image_file}")
+
