@@ -32,10 +32,13 @@ class MuleFlowElement:
         self.processes = processes or []
         
         # For every child that has a namespace prefix the same as the current element, add it to the processes list
+        print(f"Processing {self.tag}")
         if ':' in self.tag:
             for child in self.children:
                 if ':' in child.tag:
                     self.processes.append(child)
+                    # and remove it from the children list
+                    self.children.remove(child)
 
         self.notes = notes
         self.standalone = standalone
@@ -48,7 +51,7 @@ class MuleFlowElement:
         if self.tag == 'set-variable':
             identifier = self.attributes.get('variableName') or ''
         else:
-            identifier = self.attributes.get('name') or self.attributes.get('doc:name') or ''
+            identifier = self.attributes.get('name') or self.attributes.get('documentation:name') or ''
         return f"{self.tag} [{identifier}]" if identifier else self.tag
 
     def add_child(self, child: 'MuleFlowElement'):
@@ -152,7 +155,10 @@ class MuleFlowAnalyzer:
                     if namespace != 'core':
                         return f"{namespace}:{tag}"
                     else:
-                        return tag
+                        if parts[0].split('/')[-2] == 'ee':
+                            return f"ee:{tag}"
+                        else:
+                            return tag
                 return name
 
             tag = process_tag_or_attribute(element.tag)
@@ -160,7 +166,8 @@ class MuleFlowAnalyzer:
             
             children = []
             for child in element:
-                children.append(create_mule_flow_element(child))
+                if len(child) > 0 or not child.get('attributes', None) or len(child.get('text', '').strip()) > 0:
+                    children.append(create_mule_flow_element(child))
             
             # Check if the element has an error-handler
             error_handler_ref = None
@@ -170,8 +177,8 @@ class MuleFlowAnalyzer:
                     children.remove(child)
                     break
 
-            # Remove any children that have no attributes, content, or children
-            children = [child for child in children if child.attributes or child.notes or child.children]
+            # Remove any children that have no attributes, content, and no children of their own
+            #children = [child for child in children if child.attributes or child.notes or len(child.children) > 0]
             
             return MuleFlowElement(
                 tag=tag,
