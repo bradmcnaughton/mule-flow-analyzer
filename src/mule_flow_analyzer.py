@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, NewType
 import yaml
 import re
-from collections import OrderedDict
+from typing import List, Optional, Dict
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
@@ -14,14 +14,17 @@ PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
 # Enum for the Output Format
 OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 
-from typing import List, Optional, Dict
+# List of Tags that will always be processors regardless of the tag's prefix
+ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron']
 
 class MuleFlowElement:
+        
     def __init__(self, 
                  tag: str, 
                  attributes: Dict[str, str] = None, 
                  children: List['MuleFlowElement'] = None, 
                  processes: List['MuleFlowElement'] = None, 
+                 content: str = "",
                  notes: str = "", 
                  standalone: bool = True, 
                  error_handler_ref: Optional[str] = None):
@@ -30,15 +33,8 @@ class MuleFlowElement:
         
         self.children = children or []
         self.processes = processes or []
-        
-        # For every child that has a namespace prefix the same as the current element, add it to the processes list
+        self.content = content
         print(f"Processing {self.tag}")
-        if ':' in self.tag:
-            for child in self.children:
-                if ':' in child.tag:
-                    self.processes.append(child)
-                    # and remove it from the children list
-                    self.children.remove(child)
 
         self.notes = notes
         self.standalone = standalone
@@ -145,7 +141,7 @@ class MuleFlowAnalyzer:
 
     # Recursive Helper Function to convert XML Text to a MuleFlowElement
     def xml_to_mule_flow_element(self, xml_string):
-        def create_mule_flow_element(element):
+        def create_mule_flow_element(element: ET.Element) -> MuleFlowElement | None:
             def process_tag_or_attribute(name):
                 parts = name.split('}')
                 if len(parts) > 1:
@@ -163,12 +159,36 @@ class MuleFlowAnalyzer:
 
             tag = process_tag_or_attribute(element.tag)
             attributes = {process_tag_or_attribute(k): v for k, v in element.attrib.items()}
+
+            # If the element has no attributes, content, and no children of their own, skip it
+            if not element.attrib and (not element.text or element.text.strip() == ''):
+                if len(element) == 0:
+                    return None
+                elif len(element) > 1:
+                    # TODO: Consider flattening the element into a single child
+                    # Need to consider handling multiple children
+                    pass
             
             children = []
+            processes = []
+
             for child in element:
                 if len(child) > 0 or not child.get('attributes', None) or len(child.get('text', '').strip()) > 0:
-                    children.append(create_mule_flow_element(child))
-            
+                    new_child = create_mule_flow_element(child)
+                    if new_child is not None:
+
+                        # if tag is always to be a processor, add as process instead of child
+                        if new_child.tag in ALWAYS_PROCESSOR_TAGS:
+                            processes.append(new_child)
+                        elif ':' in new_child.tag:
+                            # if tag prefix (before ":") matches, add as process instead of child
+                            if new_child.tag.split(':')[0] == tag.split(':')[0]:
+                                processes.append(new_child)
+                            else:
+                                children.append(new_child)
+                        else:
+                            children.append(new_child)
+
             # Check if the element has an error-handler
             error_handler_ref = None
             for child in children:
@@ -180,10 +200,17 @@ class MuleFlowAnalyzer:
             # Remove any children that have no attributes, content, and no children of their own
             #children = [child for child in children if child.attributes or child.notes or len(child.children) > 0]
             
+            if element.text and element.text.strip():
+                content = element.text.strip()
+            else:
+                content = None
+
             return MuleFlowElement(
                 tag=tag,
                 attributes=attributes,
                 children=children,
+                processes=processes,
+                content=content,
                 error_handler_ref=error_handler_ref
             )
 
