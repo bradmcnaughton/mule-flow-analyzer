@@ -22,6 +22,9 @@ diagram_formatting_options = {
             2: '3CB371',
             3: '556B2F',
         }
+    },
+    'errors': {
+        'color': '#DD1122'
     }
 }
 

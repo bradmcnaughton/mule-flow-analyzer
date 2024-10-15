@@ -193,12 +193,12 @@ class MuleFlowAnalyzer:
             error_handler_ref = None
             for child in children:
                 if child.tag == 'error-handler':
-                    error_handler_ref = child.attributes.get('ref')
+                    if child.attributes.get('ref', None):
+                        error_handler_ref = child.attributes.get('ref')
+                    elif len(child.children) > 0:
+                        error_handler_ref = "Inline Error Handler"
                     children.remove(child)
                     break
-
-            # Remove any children that have no attributes, content, and no children of their own
-            #children = [child for child in children if child.attributes or child.notes or len(child.children) > 0]
             
             if element.text and element.text.strip():
                 content = element.text.strip()
