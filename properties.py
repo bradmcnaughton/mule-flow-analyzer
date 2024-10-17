@@ -14,6 +14,10 @@ skimparam_options = [
     '}'
 ]
 
+# All colors should be in CSS format with no hash
+# e.g. #DD1122 should be DD1122
+# English names can be found here: https://plantuml.com/en/color
+# Gradients should be specified as color1(/|\-)color2 without hashes
 diagram_formatting_options = {
     'transactions':
     {
@@ -24,7 +28,13 @@ diagram_formatting_options = {
         }
     },
     'errors': {
-        'color': '#DD1122'
+        'color': 'DD1122'
+    },
+    'mule': {
+        'box-color': 'LightBlue-6FBBD3',
+    },
+    'processors': {
+        'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
     }
 }
 

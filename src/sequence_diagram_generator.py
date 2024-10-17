@@ -8,7 +8,8 @@ CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise']
 
 class SequenceDiagramGenerator:
     def __init__(self):
-        self.mule_box_format = "box #LightBlue"
+        
+        self.mule_box_format = f"box #{properties.diagram_formatting_options['mule']['box-color']}"
         
         self.skimparam_options = properties.skimparam_options
         
@@ -32,6 +33,9 @@ class SequenceDiagramGenerator:
         
         return quote_actor(input_string.replace("\"", "").replace(" [", "\\n["))
 
+    def clean_uml_alias(self, input_string:str):
+        # Remove special characters for PlantUML Aliases (:,-,spaces, quotes)
+        return input_string.replace(":", "").replace("-", "").replace(" ", "").replace("\"", "")
     
     def clean_config_ref(self, input_string: str) -> str:
         """
@@ -67,8 +71,7 @@ class SequenceDiagramGenerator:
             alias = "Scheduler"
             description = "Scheduled Task"
             class_name = "scheduler"
-        elif 'listener' in element.tag or source_or_target == "target":
-            print(f"Adding Listener: {element.tag}")
+        elif 'listener' in element.tag or 'subscriber' in element.tag or source_or_target == "target":
             if element.tag.startswith('db'):
                 # database row
                 if 'config-ref' in element.attributes.keys():
@@ -132,6 +135,15 @@ class SequenceDiagramGenerator:
                     alias = "Queue"
                     description = "Message"
                 class_name = "queue"
+            elif ":" in element.tag and element.tag.split(":")[0] not in properties.diagram_formatting_options['processors']['internal']:
+                # External Processor
+                config_ref = element.attributes.get('config-ref', None)
+                if config_ref:
+                    alias = self.clean_config_ref(config_ref)
+                else:
+                    alias = self.clean_uml_alias(element.tag.split(":")[0])
+                description = f"{element.tag.split(":")[1]}"
+                class_name = "http"
 
         return alias, description, class_name
 
@@ -162,10 +174,15 @@ class SequenceDiagramGenerator:
         
         def record_actor(actor, actors_stack, actor_class:str="participant", relative_position:str="mule", sub_label:str=None) -> list:
             def format_actor(actor, actor_class):
-                if sub_label:
-                    actor_size=30
-                else:
-                    actor_size=56
+                actor_size = 56
+                local_sub_label = sub_label
+
+                if not local_sub_label:
+                    if actor_class == "http" and actor != "HTTP":
+                        local_sub_label = actor
+                
+                if local_sub_label:
+                    actor_size = 30
 
                 # Switch the actor name to get the right UML participant type
                 # Icon Names are here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
@@ -185,8 +202,8 @@ class SequenceDiagramGenerator:
                     actor_class = f"participant \"<size:{actor_size}><&link-intact>\" as"
                 
                 # sub labels only apply to participants with as
-                if sub_label and actor_class and actor_class.endswith("as"):
-                    actor_class = f"{actor_class[:-4]}\\n{sub_label}{actor_class[-4:]}"
+                if local_sub_label and actor_class and actor_class.endswith("as"):
+                    actor_class = f"{actor_class[:-4]}\\n{local_sub_label}{actor_class[-4:]}"
 
                 if actor_class and actor_class.endswith("as"):
                     return f"{actor_class} {actor}"
@@ -214,7 +231,9 @@ class SequenceDiagramGenerator:
             'event_targets': [],
             'choice_stack': [],
             'alias_reference': {},
-            'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None
+            'alias_config_reference': {}, # Used to group aliases that share the same config-ref
+            'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
+            'loop_event_source': None
         }
 
         # The content list will be used to build the diagram syntax
@@ -327,6 +346,13 @@ class SequenceDiagramGenerator:
                     # Reset the previous actor to the choice actor
                     tracking_vars['previous_actor'] = choice_previous_actor
                 pass
+            elif element.tag == 'foreach':
+                
+                # Track the loop event source
+                tracking_vars['loop_event_source'] = element
+                                              
+                for item in element.children:
+                    content = process_element(item, content, tracking_vars)
             
             elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
                 # Previous actor is calling this element (may be self)
@@ -335,6 +361,13 @@ class SequenceDiagramGenerator:
                 # Store the previous actor for the response line
                 previous_actor = tracking_vars['previous_actor']
                 
+                # Check if element is start of a loop by finding a loop element in the loop_event_source
+                if tracking_vars['loop_event_source']:
+                    loop_element = tracking_vars['loop_event_source']
+                    content.append(f"loop {loop_element.attributes.get('documentation:name')} Collection: {loop_element.attributes.get('collection', '')}")
+                    # Unset the loop event source
+                    tracking_vars['loop_event_source'] = None
+ 
                 # Check if element is starting a transaction
                 if element.attributes.get('transactionalAction', None):
                     # New Transaction
@@ -345,7 +378,6 @@ class SequenceDiagramGenerator:
                         tracking_vars['transaction_stack'].append(element.attributes.get('transactionType', None))
                     
                         content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]} : {element.attributes.get('transactionType', None)} Transaction Starting")
-
 
                 # Append the call line
                 # (Skip if event source)
@@ -359,7 +391,7 @@ class SequenceDiagramGenerator:
 
                 # Check if element is raising an error and note the error handler
                 if element.tag == 'raise-error':
-                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} {properties.diagram_formatting_options['errors']['color']}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
+                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['errors']['color']}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
                     if tracking_vars['error_handler_ref']:
                         note += f"\\n\\nError Handler:\\n{tracking_vars['error_handler_ref']}"
                     else:
@@ -392,12 +424,20 @@ class SequenceDiagramGenerator:
                             # Element is already in the alias reference
                             target_alias = tracking_vars['alias_reference'][str(element)]
                         else:
-                            # Element is not in the alias reference
+                            # Element is not in the alias reference, so it will be added
                             if any(target_alias == value for value in tracking_vars['alias_reference'].values()):
-                                target_alias = f"{target_alias}_{len(tracking_vars['alias_reference'])}"
-                        
-                        tracking_vars['alias_reference'][str(element)] = target_alias
-
+                                # Alias is already in use, so we need to make it unique, check if it shares the same config-ref
+                                if element.attributes.get('config-ref', None) and tracking_vars['alias_config_reference'].get(element.attributes.get('config-ref', None), None):
+                                    target_alias = tracking_vars['alias_config_reference'][element.attributes.get('config-ref', None)]
+                                else:
+                                    target_alias = f"{target_alias}_{len(tracking_vars['alias_reference'])}"
+                                                                               
+                            tracking_vars['alias_reference'][str(element)] = target_alias
+                            # And add it to the config reference
+                            if element.attributes.get('config-ref', None):
+                                if not tracking_vars['alias_config_reference'].get(element.attributes.get('config-ref', None), None):
+                                    tracking_vars['alias_config_reference'][element.attributes.get('config-ref', None)] = target_alias
+ 
                         tracking_vars['actors_stack'] = record_actor(tracking_vars['alias_reference'].get(str(element), target_alias), tracking_vars['actors_stack'], target_class_name, relative_position="target", sub_label=target_alias_sub_label)
                         content.append(sequence_line_formatter(tracking_vars['current_actor'], tracking_vars['alias_reference'].get(str(element), target_alias), target_description, tracking_vars=tracking_vars))
                         content.append(sequence_line_formatter(tracking_vars['alias_reference'].get(str(element), target_alias), tracking_vars['current_actor'], None, arrow_style="-->", tracking_vars=tracking_vars))
@@ -474,3 +514,4 @@ class SequenceDiagramGenerator:
 
         # Return the final syntax list
         return outfile
+
