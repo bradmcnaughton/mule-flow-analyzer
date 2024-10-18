@@ -6,11 +6,16 @@ analyzer_properties = {
     }
 }
 
+# wrapWidth applies to notes and maxMessageSize applies to messages (sequence lines)
 skimparam_options = [
     'skinparam monochrome false',
     'skinparam ArrowThickness 2',
     'skinparam participant {',
     'RoundCorner 20',
+    '}',
+    'skinparam {',
+    'wrapWidth 200',
+    'maxMessageSize 200',
     '}'
 ]
 
@@ -35,6 +40,9 @@ diagram_formatting_options = {
     },
     'processors': {
         'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
+    },
+    'notes': {
+        'include_documentation': True,
     }
 }
 

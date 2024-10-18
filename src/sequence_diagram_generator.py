@@ -24,6 +24,10 @@ class SequenceDiagramGenerator:
         else:
             return input_string
 
+    def clean_uml_note(self, input_string:str) -> str:
+        # Escape any double quotes and convert line breaks to \n
+        return input_string.replace('"', '\\"').replace('\n', '\\n')
+
     def clean_uml_syntax(self, input_string:str):
         def quote_actor(actor):
                 if actor:
@@ -42,17 +46,17 @@ class SequenceDiagramGenerator:
         Attempt to convert a config reference into a description of the source/target
         """
         # Uppercase the input_string
-        input_string = input_string.upper()
+        #input_string = input_string.upper()
 
         # Remove common prefixes and suffixes
-        cleaned_string = re.sub(r'^(CONFIG_|DB_|DATABASE_|HTTP_|CONFIGURATION_)', '', input_string)
-        cleaned_string = re.sub(r'(_CONFIG|_DB|_DATABASE|_HTTP|_CONFIGURATION)$', '', cleaned_string)
+        cleaned_string = re.sub(r'^(CONFIG_|DB_|DATABASE_|HTTP_|CONFIGURATION_)', '', input_string, flags=re.IGNORECASE)
+        cleaned_string = re.sub(r'(_CONFIG|_DB|_DATABASE|_HTTP|_CONFIGURATION)$', '', cleaned_string, flags=re.IGNORECASE)
 
         # Replace hyphens, dashes, and underscores with spaces
         cleaned_string = re.sub(r'[-–—_]', ' ', cleaned_string)
 
         # Remove any remaining instances of "CONFIG", "DB", "DATABASE", "CONFIGURATION", or "HTTP"
-        cleaned_string = re.sub(r'\b(CONFIG|DB|DATABASE|CONFIGURATION|HTTP)\b', '', cleaned_string)
+        cleaned_string = re.sub(r'\b(CONFIG|DB|DATABASE|CONFIGURATION|HTTP)\b', '', cleaned_string, flags=re.IGNORECASE)
 
         # Ensure spaces are maximum one space and strip leading/trailing spaces
         cleaned_string = re.sub(r'\s+', ' ', cleaned_string).strip()
@@ -75,7 +79,8 @@ class SequenceDiagramGenerator:
             if element.tag.startswith('db'):
                 # database row
                 if 'config-ref' in element.attributes.keys():
-                    db_name = self.clean_config_ref(element.attributes.get('config-ref'))
+                    # DB Names use uppercase
+                    db_name = self.clean_config_ref(element.attributes.get('config-ref')).upper()
                 else:
                     db_name = None
                 alias = f"Database\\n{db_name}".strip()
@@ -102,7 +107,6 @@ class SequenceDiagramGenerator:
                     description = f"HTTP Request: ({' '.join(filter(None, [http_method, http_path])).strip()})" 
                 else:
                     description = f"HTTP Request ({(element.tag.split(':')[-1]).replace('-', ' ').capitalize()})"
-
                 class_name = "http"
             elif element.tag.startswith('email'):
                 # email
@@ -233,7 +237,8 @@ class SequenceDiagramGenerator:
             'alias_reference': {},
             'alias_config_reference': {}, # Used to group aliases that share the same config-ref
             'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
-            'loop_event_source': None
+            'loop_event_source': None,
+            'async_status': None
         }
 
         # The content list will be used to build the diagram syntax
@@ -255,6 +260,15 @@ class SequenceDiagramGenerator:
         # So test the first element to see if it's a known type of event source
         if event_source:
             event_source_alias, event_source_description, event_source_class_name = self.pretty_participant(event_source)
+            
+            if event_source_alias:
+                if ' ' in event_source_alias:
+                    event_source_label = event_source_alias
+                    event_source_alias = event_source_alias.split(' ')[0]
+                else:
+                    event_source_label = event_source_alias
+            
+            
             # track the alias references
             if not tracking_vars['alias_reference'].get(str(event_source), None):
                 # Create it as is
@@ -272,7 +286,8 @@ class SequenceDiagramGenerator:
                     tracking_vars['alias_reference'].get(str(event_source), event_source_alias), 
                     tracking_vars['actors_stack'], 
                     event_source_class_name, 
-                    relative_position="source")
+                    relative_position="source",
+                    sub_label=event_source_label)
                 # Add the event source line to the diagram
                 content.append(sequence_line_formatter(
                     tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
@@ -354,6 +369,24 @@ class SequenceDiagramGenerator:
                 for item in element.children:
                     content = process_element(item, content, tracking_vars)
             
+            elif element.tag == 'async':
+                # Don't create a participant for async, show the async processors instead
+                # Set tracking to NEW so it will trigger the async start (different arrow)
+                tracking_vars['async_status'] = 'NEW'
+                
+                async_previous_actor = tracking_vars['previous_actor']
+
+
+                for child in element.children:
+                    content = process_element(child, content, tracking_vars)
+                
+                # Reset tracking of async status
+                # TODO: Does this support nested async?
+                tracking_vars['async_status'] = None
+                # Ensure the previous actor is set back to the async executor
+                tracking_vars['previous_actor'] = async_previous_actor
+
+            
             elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
                 # Previous actor is calling this element (may be self)
                 tracking_vars['current_actor'] = str(element)
@@ -382,7 +415,12 @@ class SequenceDiagramGenerator:
                 # Append the call line
                 # (Skip if event source)
                 if not tracking_vars['event_source']:                
-                    content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], tracking_vars=tracking_vars))
+                    if tracking_vars['async_status'] == 'NEW':
+                        content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], tracking_vars=tracking_vars, arrow_style="->>"))
+                        content.append(f"note over {tracking_vars['current_actor']}: Async Start")
+                        tracking_vars['async_status'] = 'STARTED'
+                    else:
+                        content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], tracking_vars=tracking_vars))
 
                 # Manage Errors
                 if element.error_handler_ref:
@@ -398,6 +436,11 @@ class SequenceDiagramGenerator:
                         note += f"\\n\\nNo Error Handler Defined"
                     content.append(note)
 
+                # Add any documentation as a note above.
+                if properties.diagram_formatting_options['notes']['include_documentation']:
+                    if element.attributes.get('documentation:description', None):
+                        content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: { self.clean_uml_note(element.attributes.get('documentation:description')) }")
+                
                 # Add the internal workings of the processor
                 if len(element.processes) > 0:
                     # Append the internal workings of the processor as actions on itself
