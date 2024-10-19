@@ -7,6 +7,7 @@ from typing import Dict, NewType
 import yaml
 import re
 from typing import List, Optional, Dict
+from xml.sax.saxutils import escape, unescape
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
@@ -15,7 +16,7 @@ PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
 OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 
 # List of Tags that will always be processors regardless of the tag's prefix
-ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron']
+ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron', 'redelivery-policy']
 
 class MuleFlowElement:
         
@@ -27,7 +28,8 @@ class MuleFlowElement:
                  content: str = "",
                  notes: str = "", 
                  standalone: bool = True, 
-                 error_handler_ref: Optional[str] = None):
+                 error_handler_ref: Optional[str] = None,
+                 error_handler_element: Optional[List['MuleFlowElement']] = None):
         self.tag = tag
         self.attributes = attributes or {}
         
@@ -39,6 +41,7 @@ class MuleFlowElement:
         self.notes = notes
         self.standalone = standalone
         self.error_handler_ref = error_handler_ref
+        self.error_handler_element = error_handler_element
 
     def __str__(self):
         # A Case Statement to handle stringifying the tag based on the key attributes of the element
@@ -46,6 +49,8 @@ class MuleFlowElement:
         # Extend as needed
         if self.tag == 'set-variable':
             identifier = self.attributes.get('variableName') or ''
+        elif self.tag in ['on-error-propagate', 'on-error-continue']:
+            identifier = self.attributes.get('when') or self.attributes.get('type') or '' 
         else:
             identifier = self.attributes.get('name') or self.attributes.get('documentation:name') or ''
         return f"{self.tag} [{identifier}]" if identifier else self.tag
@@ -191,12 +196,14 @@ class MuleFlowAnalyzer:
 
             # Check if the element has an error-handler
             error_handler_ref = None
+            error_handler_element = None
             for child in children:
                 if child.tag == 'error-handler':
                     if child.attributes.get('ref', None):
                         error_handler_ref = child.attributes.get('ref')
                     elif len(child.children) > 0:
                         error_handler_ref = "Inline Error Handler"
+                        error_handler_element = child
                     children.remove(child)
                     break
             
@@ -211,7 +218,8 @@ class MuleFlowAnalyzer:
                 children=children,
                 processes=processes,
                 content=content,
-                error_handler_ref=error_handler_ref
+                error_handler_ref=error_handler_ref,
+                error_handler_element=error_handler_element
             )
 
         tree = ET.fromstring(xml_string)
@@ -293,7 +301,8 @@ class MuleFlowAnalyzer:
         for xml_file, xml_content in self.project_files.items():
             # Process the XML structure in its raw form
             # Replace all property keys in the XML with the values from the properties files
-            self._process_xml_structure_replace_placeholders(xml_content)
+            self.project_files[xml_file] = self._process_xml_structure_replace_placeholders(xml_content)
+            pass
 
         # 2. Convert the XML structure to a MuleFlowElement
         for xml_file, xml_content in self.project_files.items():
@@ -388,31 +397,57 @@ class MuleFlowAnalyzer:
     def _contains_placeholder(self, text):
         return ('${' in text and '}' in text) or ('Mule::p(' in text) or ('p(' in text and ("'" in text or '"' in text))
 
-    def _resolve_placeholder(self, text):
-        def replace_placeholder(placeholder, wrapper=None):
-            for _, prop_dict in sorted(self.discovered_properties.items()):
-                if placeholder in prop_dict:
-                    return prop_dict[placeholder]
-            # Return original if no replacement found, using the appropriate wrapper
-            if wrapper == 'Mule::p':
-                return f"Mule::p({placeholder})"
-            elif wrapper == 'p':
-                return f"p('{placeholder}')"
-            else:
-                return f"${{{placeholder}}}"
+    def _process_xml_structure_replace_placeholders(self, xml_string):
+        def replace_placeholders(text):
+            def replace_placeholder_value(placeholder, wrapper=None):
+                for _, prop_dict in sorted(self.discovered_properties.items()):
+                    if placeholder in prop_dict:
+                        return prop_dict[placeholder]
+                # Return original if no replacement found, using the appropriate wrapper
+                if wrapper == 'Mule::p':
+                    return f"Mule::p({placeholder})"
+                elif wrapper == 'p':
+                    return f"p('{placeholder}')"
+                else:
+                    return f"${{{placeholder}}}"
+                       
+            # Handle ${...} placeholders
+            text = re.sub(r'\$\{([^}]+)\}', lambda m: replace_placeholder_value(m.group(1)), text)
+            
+            # Handle Mule::p(...) placeholders
+            text = re.sub(r'Mule::p\(([^)]+)\)', lambda m: replace_placeholder_value(m.group(1).strip("'\""), 'Mule::p'), text)
+            
+            # Handle p('...') or p("...") placeholders
+            text = re.sub(r"p\((['\"])([^)]+)\1\)", lambda m: replace_placeholder_value(m.group(2), 'p'), text)
+            
+            return text
 
-        # Handle ${...} placeholders, including those wrapped in quotes
-        text = re.sub(r'(?:\'|\")?\$\{([^}]+)\}(?:\'|\")?', lambda m: replace_placeholder(m.group(1)), text)
+        def process_tag(match):
+            full_tag = match.group(0)
+            tag_name = match.group(1)
+            attributes = match.group(2)
+            #print(f"OLD TAG: {full_tag}")
+            
+            if attributes:
+                # Process attributes
+                attributes = re.sub(r'(\w+)=(["\'])(.*?)\2', 
+                                    lambda m: f'{m.group(1)}={m.group(2)}{replace_placeholders(m.group(3))}{m.group(2)}',
+                                    attributes)
+            
+            # Reconstruct the tag with processed attributes
+            #print(f"NEW TAG: <{tag_name}{attributes}>")
+            return f"<{tag_name}{attributes}>"
 
-        # Handle Mule::p(...) placeholders
-        text = re.sub(r'Mule::p\(([^)]+)\)', lambda m: replace_placeholder(m.group(1).strip("'\""), 'Mule::p'), text)
+        # Replace placeholders in tag attributes
+        xml_string = re.sub(r'<(\w+)([^>]*)>', process_tag, xml_string)
+        
+        # Replace placeholders in text content
+        xml_string = re.sub(r'>([^<]+)<', lambda m: f'>{replace_placeholders(m.group(1))}<', xml_string)
+        
+        return xml_string
 
-        # Handle p('...') or p("...") placeholders
-        text = re.sub(r"p\((['\"])([^)]+)\1\)", lambda m: replace_placeholder(m.group(2), 'p'), text)
-
-        return text
-
-    def _process_xml_structure_replace_placeholders(self, element, indent=0):
+    # Old XMLDICT version, delete once replaced with above
+    """ def _process_xml_structure_replace_placeholders_old(self, element, indent=0):
         indent_str = "  " * indent
         
         if isinstance(element, dict):
@@ -440,8 +475,32 @@ class MuleFlowAnalyzer:
                         print(f"{indent_str}Tag: {tag}, Content: {element[tag]}")
         elif isinstance(element, list):
             for item in element:
-                self._process_xml_structure_replace_placeholders(item, indent)
-        
+    """
+    # Old XMLDICT version, delete once replaced with above
+    """ def _resolve_placeholder(self, text):
+        def replace_placeholder(placeholder, wrapper=None):
+            for _, prop_dict in sorted(self.discovered_properties.items()):
+                if placeholder in prop_dict:
+                    return prop_dict[placeholder]
+            # Return original if no replacement found, using the appropriate wrapper
+            if wrapper == 'Mule::p':
+                return f"Mule::p({placeholder})"
+            elif wrapper == 'p':
+                return f"p('{placeholder}')"
+            else:
+                return f"${{{placeholder}}}"
+
+        # Handle ${...} placeholders, including those wrapped in quotes
+        text = re.sub(r'(?:\'|\")?\$\{([^}]+)\}(?:\'|\")?', lambda m: replace_placeholder(m.group(1)), text)
+
+        # Handle Mule::p(...) placeholders
+        text = re.sub(r'Mule::p\(([^)]+)\)', lambda m: replace_placeholder(m.group(1).strip("'\""), 'Mule::p'), text)
+
+        # Handle p('...') or p("...") placeholders
+        text = re.sub(r"p\((['\"])([^)]+)\1\)", lambda m: replace_placeholder(m.group(2), 'p'), text)
+
+        return text """
+
     def analyze_mule_flows(self):
         self._prepare_analysis()
 
@@ -465,4 +524,5 @@ class MuleFlowAnalyzer:
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
             print(f"Generated {image_file}")
+
 

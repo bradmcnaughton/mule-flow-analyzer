@@ -24,10 +24,22 @@ skimparam_options = [
 # English names can be found here: https://plantuml.com/en/color
 # Gradients should be specified as color1(/|\-)color2 without hashes
 diagram_formatting_options = {
+    'mule': {
+        'box-color': 'LightBlue-6FBBD3',
+    },
+    'create_mode': True, # True creates processors at the point that are executed. False follows standard sequence diagram format of all participants at top and bottom 
+    'verbose': {
+        'processors': True, # Include more details about known processors
+        'errors': False, # Include the error handler processors in the diagram
+        'notes': True, # Include documentation tag as a Note on the actor
+    },
+    'processors': {
+        'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
+    },
     'transactions':
     {
         'arrows': {
-            1: '66CDAA',
+            1: 'pink',
             2: '3CB371',
             3: '556B2F',
         }
@@ -35,14 +47,12 @@ diagram_formatting_options = {
     'errors': {
         'color': 'DD1122'
     },
-    'mule': {
-        'box-color': 'LightBlue-6FBBD3',
-    },
-    'processors': {
-        'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
-    },
-    'notes': {
-        'include_documentation': True,
+    # Async can be highlighted with a note or a group (or both)
+    # If both are false, the async arrow will still be shown
+    'async':{
+        'note': False,
+        'group': True,
+        'background-color': 'goldenrod',
     }
 }
 

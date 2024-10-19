@@ -3,8 +3,8 @@ import re
 from src.mule_flow_analyzer import MuleFlowElement
 import properties
 
-CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather']
-CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise']
+CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful']
+CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue']
 
 class SequenceDiagramGenerator:
     def __init__(self):
@@ -151,6 +151,27 @@ class SequenceDiagramGenerator:
 
         return alias, description, class_name
 
+    def attributes_to_activities(self, element:MuleFlowElement, activities:list) -> list:
+        if len(element.attributes) > 0:
+            # Attributes of the XML are mapped to activities
+            for key, value in element.attributes.items():
+                activities.append(f"{key}: {value}")
+        else:
+            if element.content:
+                # Tag of the XML represents the activity
+                activities.append( element.tag.split(":")[-1].replace('-', ' ') )
+            else:
+                # The tag is a parent of a useful element, but doesn't add any information
+                pass
+
+        # Add the children process tags as well
+        if len(element.processes) > 0:
+            for child_process in element.processes:
+                activities = self.attributes_to_activities(child_process, activities)
+            
+        return activities
+
+
     def generate_sequence_diagram_syntax(self, flow:MuleFlowElement):
         
         def sequence_line_formatter(source_actor, target_actor, description=None, arrow_style="->", tracking_vars:dict=None):
@@ -167,14 +188,19 @@ class SequenceDiagramGenerator:
                 arrow_colour = ""
 
             # insert arrow color into the arrow provided:
+            # Logic handles all types of PlantUML arrows
             if arrow_colour:
                 if arrow_style[1] == "<":
                     arrow_style = f"{arrow_style[:2]}{arrow_colour}{arrow_style[2:]}"
                 else:
                     arrow_style = f"{arrow_style[0]}{arrow_colour}{arrow_style[1:]}"
             
-
-            return f"{cleaned_source_actor} {arrow_style} {cleaned_target_actor}: {cleaned_description}"
+            if tracking_vars and 'create_mode' in tracking_vars.keys() and tracking_vars['create_mode'] and cleaned_source_actor != cleaned_target_actor:
+                mode_string = "** "
+            else:
+                mode_string = ""
+            
+            return f"{cleaned_source_actor} {arrow_style} {cleaned_target_actor} {mode_string}: {cleaned_description}"
         
         def record_actor(actor, actors_stack, actor_class:str="participant", relative_position:str="mule", sub_label:str=None) -> list:
             def format_actor(actor, actor_class):
@@ -238,7 +264,8 @@ class SequenceDiagramGenerator:
             'alias_config_reference': {}, # Used to group aliases that share the same config-ref
             'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
             'loop_event_source': None,
-            'async_status': None
+            'async_source': None,
+            'create_mode': properties.diagram_formatting_options['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
         }
 
         # The content list will be used to build the diagram syntax
@@ -267,7 +294,6 @@ class SequenceDiagramGenerator:
                     event_source_alias = event_source_alias.split(' ')[0]
                 else:
                     event_source_label = event_source_alias
-            
             
             # track the alias references
             if not tracking_vars['alias_reference'].get(str(event_source), None):
@@ -303,26 +329,6 @@ class SequenceDiagramGenerator:
             content.append("title Unnamed Flow")
 
         def process_element(element:MuleFlowElement, content:list, tracking_vars:dict):
-            
-            def attributes_to_activities(element:MuleFlowElement, activities:list) -> list:
-                if len(element.attributes) > 0:
-                    # Attributes of the XML are mapped to activities
-                    for key, value in element.attributes.items():
-                        activities.append(f"{key}: {value}")
-                else:
-                    if element.content:
-                        # Tag of the XML represents the activity
-                        activities.append( element.tag.split(":")[-1].replace('-', ' ') )
-                    else:
-                        # The tag is a parent of a useful element, but doesn't add any information
-                        pass
-
-                # Add the children process tags as well
-                if len(element.processes) > 0:
-                    for child_process in element.processes:
-                        activities = attributes_to_activities(child_process, activities)
-                
-                return activities
             
             print(f"Creating UML for {element.tag}")
 
@@ -361,33 +367,34 @@ class SequenceDiagramGenerator:
                     # Reset the previous actor to the choice actor
                     tracking_vars['previous_actor'] = choice_previous_actor
                 pass
-            elif element.tag == 'foreach':
-                
+            elif element.tag in ['foreach', 'until-successful']:
                 # Track the loop event source
                 tracking_vars['loop_event_source'] = element
                                               
                 for item in element.children:
                     content = process_element(item, content, tracking_vars)
-            
             elif element.tag == 'async':
                 # Don't create a participant for async, show the async processors instead
                 # Set tracking to NEW so it will trigger the async start (different arrow)
-                tracking_vars['async_status'] = 'NEW'
-                
+                tracking_vars['async_source'] = str(element.tag)
                 async_previous_actor = tracking_vars['previous_actor']
-
-
-                for child in element.children:
-                    content = process_element(child, content, tracking_vars)
                 
-                # Reset tracking of async status
-                # TODO: Does this support nested async?
-                tracking_vars['async_status'] = None
-                # Ensure the previous actor is set back to the async executor
-                tracking_vars['previous_actor'] = async_previous_actor
+                if properties.diagram_formatting_options['async']['note']:
+                    # Append the async start Note
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} #{properties.diagram_formatting_options.get('async', {}).get('background-color', 'transparent')}: Async Start")
+                if properties.diagram_formatting_options['async']['group']:
+                    # Wrap the async in a group
+                    content.append(f"group #{properties.diagram_formatting_options['async'].get('background-color', 'transparent')} async")
+            elif element.tag == 'try':
+                content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
 
-            
+            #--------------------------------------------------------------------------------------------
+            # General Handling for all elements and processors that do something in the flow rather than controlling it
+            #--------------------------------------------------------------------------------------------
             elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
+                # Default arrow style, Can be overridden by async or transaction
+                arrow_style="->"
+                
                 # Previous actor is calling this element (may be self)
                 tracking_vars['current_actor'] = str(element)
                 tracking_vars['actors_stack'] = record_actor(tracking_vars['current_actor'], tracking_vars['actors_stack'], relative_position="mule")
@@ -397,30 +404,42 @@ class SequenceDiagramGenerator:
                 # Check if element is start of a loop by finding a loop element in the loop_event_source
                 if tracking_vars['loop_event_source']:
                     loop_element = tracking_vars['loop_event_source']
-                    content.append(f"loop {loop_element.attributes.get('documentation:name')} Collection: {loop_element.attributes.get('collection', '')}")
+                    # Handle format for various types of loops
+                    if loop_element.tag == 'foreach':
+                        content.append(f"loop {loop_element.attributes.get('documentation:name')} Collection: {loop_element.attributes.get('collection', '')}")
+                    elif loop_element.tag == 'until-successful':
+                        until_successful_statment = "loop "
+                        if 'until successful' in loop_element.attributes.get('documentation:name', '').lower(): 
+                            until_successful_statment += loop_element.attributes.get('documentation:name')
+                        else:
+                            until_successful_statment += "Until Successful - " + loop_element.attributes.get('documentation:name')
+                        
+                        if loop_element.attributes.get('maxRetries', None):
+                            until_successful_statment += f" max retries: {loop_element.attributes.get('maxRetries')}"
+                        content.append(until_successful_statment)
+                            
                     # Unset the loop event source
                     tracking_vars['loop_event_source'] = None
- 
+
+                # check if element is starting an async process
+                if tracking_vars['async_source']:
+                    arrow_style="->>"
+                    tracking_vars['async_source'] = None
+
                 # Check if element is starting a transaction
                 if element.attributes.get('transactionalAction', None):
                     # New Transaction
                     if element.attributes.get('transactionalAction') == 'ALWAYS_BEGIN' or \
                         (element.attributes.get('transactionalAction') == 'BEGIN_OR_JOIN' and len(tracking_vars['transaction_stack']) == 0):
                         # TODO: Handle local transactions having ALWAYS_BEGIN when an existing transaction is already in progress
-                        # That should be an error
+                        # (That should be an error)
                         tracking_vars['transaction_stack'].append(element.attributes.get('transactionType', None))
-                    
                         content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]} : {element.attributes.get('transactionType', None)} Transaction Starting")
 
-                # Append the call line
+                # Append the incoming call line
                 # (Skip if event source)
-                if not tracking_vars['event_source']:                
-                    if tracking_vars['async_status'] == 'NEW':
-                        content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], tracking_vars=tracking_vars, arrow_style="->>"))
-                        content.append(f"note over {tracking_vars['current_actor']}: Async Start")
-                        tracking_vars['async_status'] = 'STARTED'
-                    else:
-                        content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], tracking_vars=tracking_vars))
+                if not tracking_vars['event_source']:                                   
+                    content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
 
                 # Manage Errors
                 if element.error_handler_ref:
@@ -429,7 +448,7 @@ class SequenceDiagramGenerator:
 
                 # Check if element is raising an error and note the error handler
                 if element.tag == 'raise-error':
-                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['errors']['color']}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
+                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
                     if tracking_vars['error_handler_ref']:
                         note += f"\\n\\nError Handler:\\n{tracking_vars['error_handler_ref']}"
                     else:
@@ -437,7 +456,7 @@ class SequenceDiagramGenerator:
                     content.append(note)
 
                 # Add any documentation as a note above.
-                if properties.diagram_formatting_options['notes']['include_documentation']:
+                if properties.diagram_formatting_options['verbose']['notes']:
                     if element.attributes.get('documentation:description', None):
                         content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: { self.clean_uml_note(element.attributes.get('documentation:description')) }")
                 
@@ -446,10 +465,10 @@ class SequenceDiagramGenerator:
                     # Append the internal workings of the processor as actions on itself
                     activities = []
                     for process in element.processes:
-                        activities = attributes_to_activities(process, activities)
+                        activities = self.attributes_to_activities(process, activities)
 
                     for activity in activities:
-                        content.append(sequence_line_formatter(tracking_vars['current_actor'], tracking_vars['current_actor'], activity, tracking_vars=tracking_vars))
+                        content.append(sequence_line_formatter(tracking_vars['current_actor'], tracking_vars['current_actor'], activity, arrow_style=arrow_style, tracking_vars=tracking_vars))
                     
                 if not tracking_vars['event_source']:
                     # Check if we should add a target side actor (Downstream System)
@@ -482,8 +501,24 @@ class SequenceDiagramGenerator:
                                     tracking_vars['alias_config_reference'][element.attributes.get('config-ref', None)] = target_alias
  
                         tracking_vars['actors_stack'] = record_actor(tracking_vars['alias_reference'].get(str(element), target_alias), tracking_vars['actors_stack'], target_class_name, relative_position="target", sub_label=target_alias_sub_label)
-                        content.append(sequence_line_formatter(tracking_vars['current_actor'], tracking_vars['alias_reference'].get(str(element), target_alias), target_description, tracking_vars=tracking_vars))
-                        content.append(sequence_line_formatter(tracking_vars['alias_reference'].get(str(element), target_alias), tracking_vars['current_actor'], None, arrow_style="-->", tracking_vars=tracking_vars))
+                        
+                        # Outbound line to external target
+                        content.append(sequence_line_formatter(
+                            tracking_vars['current_actor'],
+                            tracking_vars['alias_reference'].get(str(element),target_alias),
+                            target_description,
+                            arrow_style=arrow_style,
+                            tracking_vars=tracking_vars
+                        ))
+
+                        # Return line to the current actor
+                        content.append(sequence_line_formatter(
+                            tracking_vars['alias_reference'].get(str(element), target_alias),
+                            tracking_vars['current_actor'],
+                            None,
+                            arrow_style="-->",
+                            tracking_vars=tracking_vars
+                        ))
 
                 else:
                     # Set it to None to track we are past the event source
@@ -513,6 +548,56 @@ class SequenceDiagramGenerator:
                 # Response line
                 #content.append(sequence_line_formatter(str(element), previous_actor, "return", arrow_style="-->"))
                 pass
+
+            # Ending an Async
+            if element.tag == 'async':
+                # Ensure the previous actor is set back to the async executor
+                tracking_vars['previous_actor'] = async_previous_actor
+                if properties.diagram_formatting_options['async']['group']:
+                    content.append("end")
+
+            # Ending a Try
+            elif element.tag == 'try':
+                content.append(f"else Error Handling")
+                if properties.diagram_formatting_options['verbose']['errors']:
+                    # Track the last actor before the error handler
+                    try_previous_actor = tracking_vars['previous_actor']
+                    # Add the error handler's processors
+                    if element.error_handler_element and len(element.error_handler_element.children) > 0:
+                        # Inject the inline error handler processors into the content
+                        tracking_vars['create_mode'] = True
+                        # Use an alt to track multiple error handler options
+                        if len(element.error_handler_element.children) > 0:
+                            do_alt = True
+                        else:
+                            do_alt = False  
+                        alt_count = 0
+                        
+                        if do_alt:
+                            content.append(f"alt#{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')} {str(element.error_handler_element.children[0])}")
+                            alt_count = 1
+                        
+                        for child in element.error_handler_element.children:
+                            # Each error handler will originate from the last actor before the error handler
+                            tracking_vars['previous_actor'] = try_previous_actor
+                            
+                            if do_alt:
+                                if alt_count > 1:
+                                    content.append(f"else {str(child)}")
+                                alt_count += 1
+                            
+                            content = process_element(child, content, tracking_vars)
+
+                        if do_alt:
+                            content.append("end")
+
+                        tracking_vars['create_mode'] = False
+                    # Reset the previous actor to the last actor before the error handler
+                    tracking_vars['previous_actor'] = try_previous_actor
+                else:
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')}: {element.error_handler_ref}")
+                # End the Try Catch
+                content.append("end")
 
             return content
 
