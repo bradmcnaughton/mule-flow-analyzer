@@ -8,14 +8,15 @@ def main():
                         help="Path to the Mule Project for analysis (default: current directory)")
     parser.add_argument("-props", "--properties-hierarchy", 
                         help="A comma-separated list of property file names relative to the src/main/resources directory")
+    parser.add_argument("-f", "--flow-name", default=None,
+                        help="The name of the flow to generate a diagram for")
 
     args = parser.parse_args()
 
     project_path = args.project_path
     properties_hierarchy = None
-
+    flow_name = args.flow_name
     
-
     if args.properties_hierarchy:
         prop_files = args.properties_hierarchy.split(',')
         properties_hierarchy = PropertyHierarchy({i: filename.strip() for i, filename in enumerate(prop_files)})
@@ -45,7 +46,7 @@ def main():
             pass  # Not Implemented
 
         # Further analysis or operations can be added here
-        analyzer.analyze_mule_flows()
+        analyzer.analyze_mule_flows(flow_name)
         pass
 
     except Exception as e:

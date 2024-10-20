@@ -18,6 +18,9 @@ OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 # List of Tags that will always be processors regardless of the tag's prefix
 ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron', 'redelivery-policy']
 
+# List of Tags that should avoid being stored as processes, usually because they get put into a control flow element that shares a common prefix.
+NEVER_PROCESSOR_TAGS = ['transform']
+
 class MuleFlowElement:
         
     def __init__(self, 
@@ -187,7 +190,8 @@ class MuleFlowAnalyzer:
                             processes.append(new_child)
                         elif ':' in new_child.tag:
                             # if tag prefix (before ":") matches, add as process instead of child
-                            if new_child.tag.split(':')[0] == tag.split(':')[0]:
+                            # With some exceptions of known flow elements
+                            if ':' in new_child.tag and new_child.tag.split(':')[1] not in NEVER_PROCESSOR_TAGS and new_child.tag.split(':')[0] == tag.split(':')[0]:
                                 processes.append(new_child)
                             else:
                                 children.append(new_child)
@@ -222,12 +226,13 @@ class MuleFlowAnalyzer:
                 error_handler_element=error_handler_element
             )
 
-        tree = ET.fromstring(xml_string)
-        
-        if tree is not None:
-            return create_mule_flow_element(tree)
-        else:
-            raise ValueError("No 'mule' element found in the XML.")
+        if xml_string is not None:
+            tree = ET.fromstring(xml_string)
+            
+            if tree is not None:
+                return create_mule_flow_element(tree)
+            else:
+                raise ValueError("No 'mule' element found in the XML.")
 
     def _populate_properties_hierarchy(self):
         resources_dir = Path(self.project_path) / "src" / "main" / "resources"
@@ -293,7 +298,7 @@ class MuleFlowAnalyzer:
                 items.append((new_key, v))
         return dict(items)
 
-    def _prepare_analysis(self):
+    def _prepare_analysis_xml(self, flow_name: str = None):
         # Process the supplied properties files and get all keys
         self._discover_properties_keys()
 
@@ -301,9 +306,14 @@ class MuleFlowAnalyzer:
         for xml_file, xml_content in self.project_files.items():
             # Process the XML structure in its raw form
             # Replace all property keys in the XML with the values from the properties files
-            self.project_files[xml_file] = self._process_xml_structure_replace_placeholders(xml_content)
+            if flow_name is None or flow_name in xml_content:
+                self.project_files[xml_file] = self._process_xml_structure_replace_placeholders(xml_content)
+            else:
+                # Remove the XML file from the project_files if it doesn't match the flow_name
+                self.project_files[xml_file] = None
             pass
 
+    def _prepare_analysis_to_mule_flow_elements(self):
         # 2. Convert the XML structure to a MuleFlowElement
         for xml_file, xml_content in self.project_files.items():
             self.project_files[xml_file] = self.xml_to_mule_flow_element(xml_content)
@@ -501,8 +511,14 @@ class MuleFlowAnalyzer:
 
         return text """
 
-    def analyze_mule_flows(self):
-        self._prepare_analysis()
+    def analyze_mule_flows(self, flow_name: str = None):
+        self._prepare_analysis_xml(flow_name)
+
+        if flow_name is not None:
+            # Remove any None values from project_files
+            self.project_files = {k: v for k, v in self.project_files.items() if v is not None}
+
+        self._prepare_analysis_to_mule_flow_elements()
 
         # Print the flow and sub-flow structures
         for xml_file, xml_content in self.project_files.items():
@@ -510,7 +526,7 @@ class MuleFlowAnalyzer:
                 # Print flow and sub-flow structures
                 self.print_flow_structures(xml_file)
             elif self.output_format == OutputFormat.SEQUENCE:
-                self.generate_sequence_diagram(xml_file)
+                self.generate_sequence_diagram(xml_file, flow_name)
 
     def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
         

@@ -49,14 +49,14 @@ class SequenceDiagramGenerator:
         #input_string = input_string.upper()
 
         # Remove common prefixes and suffixes
-        cleaned_string = re.sub(r'^(CONFIG_|DB_|DATABASE_|HTTP_|CONFIGURATION_)', '', input_string, flags=re.IGNORECASE)
-        cleaned_string = re.sub(r'(_CONFIG|_DB|_DATABASE|_HTTP|_CONFIGURATION)$', '', cleaned_string, flags=re.IGNORECASE)
+        cleaned_string = re.sub(r'^(CONFIG_|DB_|DATABASE_|HTTP_|CONFIGURATION_|SALESFORCE_)', '', input_string, flags=re.IGNORECASE)
+        cleaned_string = re.sub(r'(_CONFIG|_DB|_DATABASE|_HTTP|_CONFIGURATION|_SALESFORCE)$', '', cleaned_string, flags=re.IGNORECASE)
 
         # Replace hyphens, dashes, and underscores with spaces
         cleaned_string = re.sub(r'[-–—_]', ' ', cleaned_string)
 
-        # Remove any remaining instances of "CONFIG", "DB", "DATABASE", "CONFIGURATION", or "HTTP"
-        cleaned_string = re.sub(r'\b(CONFIG|DB|DATABASE|CONFIGURATION|HTTP)\b', '', cleaned_string, flags=re.IGNORECASE)
+        # Remove any remaining instances of "CONFIG", "DB", "DATABASE", "CONFIGURATION", "HTTP", or "SALESFORCE"
+        cleaned_string = re.sub(r'\b(CONFIG|DB|DATABASE|CONFIGURATION|HTTP|SALESFORCE)\b', '', cleaned_string, flags=re.IGNORECASE)
 
         # Ensure spaces are maximum one space and strip leading/trailing spaces
         cleaned_string = re.sub(r'\s+', ' ', cleaned_string).strip()
@@ -69,6 +69,13 @@ class SequenceDiagramGenerator:
         Other classes use the alias as the name of the actor
         """
         
+        def alias_from_config_ref(element:MuleFlowElement):
+            config_ref = element.attributes.get('config-ref', None)
+            if config_ref:
+                return self.clean_config_ref(config_ref)
+            else:
+                return self.clean_uml_alias(element.tag.split(":")[0])
+
         alias, description, class_name = None, None, "participant"
         if element.tag == 'scheduler':
             # clock
@@ -110,17 +117,17 @@ class SequenceDiagramGenerator:
                 class_name = "http"
             elif element.tag.startswith('email'):
                 # email
-                alias = "Email"
+                alias = alias_from_config_ref(element)
                 description = "Email Message"
                 class_name = "email"
             elif element.tag.startswith('sockets'):
                 # sockets
-                alias = "Socket"
+                alias = alias_from_config_ref(element)
                 description = "Socket Connection"
                 class_name = "socket"
             elif element.tag.startswith('sftp') or element.tag.startswith('file'):
                 # file  
-                alias = "File"
+                alias = alias_from_config_ref(element)
                 description = f"File Transfer: ({(element.tag.split(':')[-1]).replace('-', ' ').capitalize()})"
                 class_name = "file"
             elif element.tag.startswith('jms') or element.tag.startswith('vm') or element.tag.split(":")[0].endswith("mq"):               
@@ -139,14 +146,15 @@ class SequenceDiagramGenerator:
                     alias = "Queue"
                     description = "Message"
                 class_name = "queue"
+            elif element.tag.startswith('salesforce'):
+                # Salesforce
+                alias = alias_from_config_ref(element)
+                description = f"{element.tag.split(':')[1]}"
+                class_name = "salesforce"
             elif ":" in element.tag and element.tag.split(":")[0] not in properties.diagram_formatting_options['processors']['internal']:
                 # External Processor
-                config_ref = element.attributes.get('config-ref', None)
-                if config_ref:
-                    alias = self.clean_config_ref(config_ref)
-                else:
-                    alias = self.clean_uml_alias(element.tag.split(":")[0])
-                description = f"{element.tag.split(":")[1]}"
+                alias = alias_from_config_ref(element)
+                description = f"{element.tag.split(':')[1]}"
                 class_name = "http"
 
         return alias, description, class_name
@@ -194,8 +202,8 @@ class SequenceDiagramGenerator:
                     arrow_style = f"{arrow_style[:2]}{arrow_colour}{arrow_style[2:]}"
                 else:
                     arrow_style = f"{arrow_style[0]}{arrow_colour}{arrow_style[1:]}"
-            
-            if tracking_vars and 'create_mode' in tracking_vars.keys() and tracking_vars['create_mode'] and cleaned_source_actor != cleaned_target_actor:
+                       
+            if tracking_vars and 'create_mode' in tracking_vars.keys() and tracking_vars['create_mode'] and cleaned_source_actor != cleaned_target_actor :
                 mode_string = "** "
             else:
                 mode_string = ""
@@ -214,22 +222,20 @@ class SequenceDiagramGenerator:
                 if local_sub_label:
                     actor_size = 30
 
+                # Get Formatting Options from properties
+                def actor_class_to_icon(actor_class):
+                    if actor_class in properties.diagram_formatting_options['actors'].keys():
+                        return properties.diagram_formatting_options['actors'][actor_class]
+                    else:
+                        return actor_class
+
                 # Switch the actor name to get the right UML participant type
-                # Icon Names are here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
-                if actor_class == "queue": # or actor.startswith("jms") or actor.startswith("vm") or actor.split(":")[0].endswith("mq"):
+                if actor_class == "queue":
                     actor_class = "queue"
-                elif actor_class == "database": # or actor.startswith("db:"):
+                elif actor_class == "database":
                     actor_class = "database"
-                elif actor_class == "email":
-                    actor_class = f"participant \"<size:{actor_size}><&envelope-closed>\" as"
-                elif actor_class == "scheduler":
-                    actor_class = f"participant \"<size:{actor_size}><&clock>\" as"
-                elif actor_class == "file":
-                    actor_class = f"participant \"<size:{actor_size}><&file>\" as"
-                elif actor_class == "http":
-                    actor_class = f"participant \"<size:{actor_size}><&globe>\" as"
-                elif actor_class == "socket":
-                    actor_class = f"participant \"<size:{actor_size}><&link-intact>\" as"
+                elif actor_class in ["email", "salesforce", "scheduler", "file", "http", "socket"]:
+                    actor_class = f"participant \"<size:{actor_size}>{actor_class_to_icon(actor_class)}\" as"
                 
                 # sub labels only apply to participants with as
                 if local_sub_label and actor_class and actor_class.endswith("as"):
@@ -264,7 +270,9 @@ class SequenceDiagramGenerator:
             'alias_config_reference': {}, # Used to group aliases that share the same config-ref
             'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
             'loop_event_source': None,
+            'parallel_sources': [],
             'async_source': None,
+            'cache_source': None,
             'create_mode': properties.diagram_formatting_options['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
         }
 
@@ -290,7 +298,11 @@ class SequenceDiagramGenerator:
             
             if event_source_alias:
                 if ' ' in event_source_alias:
+                    # For extra niceness, remove the class name from the sub label as it's implicit in the icon
                     event_source_label = event_source_alias
+                    if event_source_class_name.lower() in event_source_alias.lower():
+                        event_source_label = ' '.join(word for word in event_source_alias.split() if word.lower() not in event_source_class_name.lower().split())
+                    event_source_label = event_source_label.strip()
                     event_source_alias = event_source_alias.split(' ')[0]
                 else:
                     event_source_label = event_source_alias
@@ -367,12 +379,39 @@ class SequenceDiagramGenerator:
                     # Reset the previous actor to the choice actor
                     tracking_vars['previous_actor'] = choice_previous_actor
                 pass
-            elif element.tag in ['foreach', 'until-successful']:
+            elif element.tag in ['foreach', 'until-successful', 'parallel-foreach']:
                 # Track the loop event source
                 tracking_vars['loop_event_source'] = element
                                               
                 for item in element.children:
                     content = process_element(item, content, tracking_vars)
+            elif element.tag in ['scatter-gather', 'first-successful']:
+                # Track the parallel event source
+                tracking_vars['parallel_sources'] = []
+                local_parallel_sources = []
+                parallel_previous_actor = tracking_vars['previous_actor']
+
+                content.append(f"par {element.attributes.get('documentation:name', 'Scatter-Gather')}")
+                routes_opened = False
+
+                # Process the children (route tags)
+                for route in element.children:
+                    if routes_opened:
+                        content.append("else")
+                        
+                    for child in route.children:
+                        content = process_element(child, content, tracking_vars)
+
+                    # Open Routes (to trigger "else" syntax)
+                    routes_opened = True
+                    # Keep track of the last actor of each route to be used as the previous actor for the consolidating route
+                    local_parallel_sources.append(tracking_vars['previous_actor'])
+                    # Reset the previous actor to the parallel source for any future loops
+                    tracking_vars['previous_actor'] = parallel_previous_actor
+                
+                # Add the parallel sources consolidating
+                tracking_vars['parallel_sources'] = local_parallel_sources
+            
             elif element.tag == 'async':
                 # Don't create a participant for async, show the async processors instead
                 # Set tracking to NEW so it will trigger the async start (different arrow)
@@ -387,6 +426,12 @@ class SequenceDiagramGenerator:
                     content.append(f"group #{properties.diagram_formatting_options['async'].get('background-color', 'transparent')} async")
             elif element.tag == 'try':
                 content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
+            elif element.tag == 'ee:cache':
+                tracking_vars['cache_source'] = self.clean_uml_syntax(tracking_vars['current_actor'])
+                content.append(f"alt Cache Miss")
+                if element.attributes.get('documentation:name', 'Cache') != 'Cache':
+                    # Add a note matching the customised cache scope name
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name')}")
 
             #--------------------------------------------------------------------------------------------
             # General Handling for all elements and processors that do something in the flow rather than controlling it
@@ -438,8 +483,14 @@ class SequenceDiagramGenerator:
 
                 # Append the incoming call line
                 # (Skip if event source)
-                if not tracking_vars['event_source']:                                   
+                if not tracking_vars['event_source'] and len(tracking_vars['parallel_sources']) == 0:                                   
                     content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
+                elif len(tracking_vars['parallel_sources']) > 0:
+                    # Add the parallel sources consolidating
+                    for parallel_source in tracking_vars['parallel_sources']:
+                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
+                    # Clear tracking_vars['parallel_sources']
+                    tracking_vars['parallel_sources'] = []
 
                 # Manage Errors
                 if element.error_handler_ref:
@@ -476,7 +527,11 @@ class SequenceDiagramGenerator:
                     if target_alias:
                         # Aliases can't have spaces in plantuml so we will keep only first word as the alias and the rest as a sub label
                         if ' ' in target_alias:
-                            target_alias_sub_label = ' '.join(target_alias.split(' ')[1:])
+                            # For extra niceness, remove the class name from the sub label as it's implicit in the icon
+                            target_alias_sub_label = target_alias
+                            if target_class_name.lower() in target_alias.lower():
+                                target_alias_sub_label = ' '.join(word for word in target_alias.split() if word.lower() not in target_class_name.lower().split())
+                            target_alias_sub_label = target_alias_sub_label.strip()
                             target_alias = target_alias.split(' ')[0]
                         else:
                             target_alias_sub_label = None
@@ -556,6 +611,13 @@ class SequenceDiagramGenerator:
                 if properties.diagram_formatting_options['async']['group']:
                     content.append("end")
 
+            # Ending a Cache
+            if element.tag == 'ee:cache':
+                content.append("else Cache Hit")
+                content.append(sequence_line_formatter(tracking_vars['cache_source'], tracking_vars['current_actor'], 'Use Cached Value', tracking_vars=tracking_vars))
+                content.append("end")
+                tracking_vars['cache_source'] = None
+
             # Ending a Try
             elif element.tag == 'try':
                 content.append(f"else Error Handling")
@@ -565,6 +627,7 @@ class SequenceDiagramGenerator:
                     # Add the error handler's processors
                     if element.error_handler_element and len(element.error_handler_element.children) > 0:
                         # Inject the inline error handler processors into the content
+                        # Always use create mode for error handlers
                         tracking_vars['create_mode'] = True
                         # Use an alt to track multiple error handler options
                         if len(element.error_handler_element.children) > 0:
@@ -591,7 +654,8 @@ class SequenceDiagramGenerator:
                         if do_alt:
                             content.append("end")
 
-                        tracking_vars['create_mode'] = False
+                        # Reset the create mode to the global setting
+                        tracking_vars['create_mode'] = properties.diagram_formatting_options['create_mode']
                     # Reset the previous actor to the last actor before the error handler
                     tracking_vars['previous_actor'] = try_previous_actor
                 else:
@@ -609,6 +673,20 @@ class SequenceDiagramGenerator:
         # Replace the participants placeholder
         content[content.index("##PP##")] = "\n".join(tracking_vars['actors_stack'])
         
+        # Remove any duplicate create symbols
+        # Hack until a better way of checking at add time is possible
+        # probably by adding "content" into the tracking_vars
+        for i, line in enumerate(content):
+            if " ** " in line:
+                pattern = re.search(r'"[^"]+"\s\*\*\s:', line)
+                if pattern:
+                    match = pattern.group()
+                    # Check subsequent lines for the same pattern
+                    for j in range(i+1, len(content)):
+                        if match in content[j]:
+                            # Remove the "** " from the subsequent line
+                            content[j] = content[j].replace(" ** ", " ")
+
         return content
 
 

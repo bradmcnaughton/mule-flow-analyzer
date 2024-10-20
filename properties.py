@@ -27,11 +27,21 @@ diagram_formatting_options = {
     'mule': {
         'box-color': 'LightBlue-6FBBD3',
     },
-    'create_mode': True, # True creates processors at the point that are executed. False follows standard sequence diagram format of all participants at top and bottom 
+    'create_mode': False, # True creates processors at the point that are executed. False follows standard sequence diagram format of all participants at top and bottom 
     'verbose': {
         'processors': True, # Include more details about known processors
         'errors': False, # Include the error handler processors in the diagram
         'notes': True, # Include documentation tag as a Note on the actor
+    },
+    'actors': {
+        # Set any combination of icon and formatting options for specific actors
+        # Icon names can be found here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
+        'salesforce': '<color:#00A1E0><&cloud>',
+        'email': '<&envelope-closed>',
+        'scheduler': '<&clock>',
+        'file': '<&file>',
+        'http': '<&globe>',
+        'socket': '<&link-intact>',
     },
     'processors': {
         'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
