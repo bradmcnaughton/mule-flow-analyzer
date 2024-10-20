@@ -490,7 +490,7 @@ class SequenceDiagramGenerator:
                 elif len(tracking_vars['parallel_sources']) > 0:
                     # Add the parallel sources consolidating
                     for parallel_source in tracking_vars['parallel_sources']:
-                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
+                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style="-\\", tracking_vars=tracking_vars))
                     # Clear tracking_vars['parallel_sources']
                     tracking_vars['parallel_sources'] = []
 
