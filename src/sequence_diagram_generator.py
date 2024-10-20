@@ -3,7 +3,7 @@ import re
 from src.mule_flow_analyzer import MuleFlowElement
 import properties
 
-CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful']
+CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue']
 
 class SequenceDiagramGenerator:
@@ -391,7 +391,9 @@ class SequenceDiagramGenerator:
                 local_parallel_sources = []
                 parallel_previous_actor = tracking_vars['previous_actor']
 
-                content.append(f"par {element.attributes.get('documentation:name', 'Scatter-Gather')}")
+                content.append(f"par {element.attributes.get('documentation:name', element.tag)}")
+                if element.tag == 'first-successful':
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} : First Successful Will Be Used")
                 routes_opened = False
 
                 # Process the children (route tags)
