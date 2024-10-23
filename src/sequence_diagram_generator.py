@@ -4,7 +4,7 @@ from src.mule_flow_analyzer import MuleFlowElement
 import properties
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
-CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue']
+CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
 
 class SequenceDiagramGenerator:
     def __init__(self):
@@ -355,10 +355,9 @@ class SequenceDiagramGenerator:
                     content.append(f"group {element.tag} {element.attributes.get('name')}")
                 else:
                     skip_end_group = True
-            elif element.tag in ['choice']:
+            elif element.tag in ['choice', 'round-robin']:
                 # Do alt branches
                 tracking_vars['choice_stack'].append(element.children)
-                # Create a note
                 
                 choice_opened = False
                 choice_previous_actor = tracking_vars['previous_actor']
@@ -366,19 +365,26 @@ class SequenceDiagramGenerator:
                 # Group is implicitly created by the first choice "alt" and subsequent choices are "else"
                 for choice in tracking_vars['choice_stack'][len(tracking_vars['choice_stack'])-1]:
                     if not choice_opened:
-                        content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression'))}")
+                        if element.tag == 'round-robin':
+                            content.append(f"alt Round Robin First Target")
+                            content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name', 'Round Robin')}")
+                        else:
+                            content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
                         choice_opened = True
                         # TODO: Where to add this note? If choice is first element and there is no source, it can break
                         #content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {str(element)}")
-                        content.append('\'Choice goes here')
                         content = process_element(choice, content, tracking_vars)
                     else:
-                        content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', "else"))}")
+                        if element.tag == 'round-robin':
+                            content.append(f"else Round Robin Next Target")
+                        else:
+                            content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', "else"))}")
                         content.append('\'Rest of Choice goes here')
                         content = process_element(choice, content, tracking_vars)
                     # Reset the previous actor to the choice actor
+                    
                     tracking_vars['previous_actor'] = choice_previous_actor
-                pass
+                
             elif element.tag in ['foreach', 'until-successful', 'parallel-foreach']:
                 # Track the loop event source
                 tracking_vars['loop_event_source'] = element
@@ -428,6 +434,18 @@ class SequenceDiagramGenerator:
                     content.append(f"group #{properties.diagram_formatting_options['async'].get('background-color', 'transparent')} async")
             elif element.tag == 'try':
                 content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
+            elif element.tag.split(':')[0] == 'batch':
+                # Batch Branch Grouping
+                if element.tag == 'batch:job':
+                    content.append(f"group Batch Job {element.attributes.get('jobName', '')}")
+                elif element.tag == 'batch:process-records':
+                    content.append(f"group Batch Process Records")
+                elif element.tag == 'batch:step':
+                    content.append(f"group #{properties.diagram_formatting_options['batch']['step'].get('background-color', 'transparent')} Batch Step {element.attributes.get('name', '')}, Accept Policy: {element.attributes.get('acceptPolicy', 'NO_FAILURES')}")
+                elif element.tag == 'batch:aggregator':
+                    content.append(f"group Batch Aggregator {element.attributes.get('name', '')}")
+                elif element.tag == 'batch:on-complete':
+                    content.append(f"group #{properties.diagram_formatting_options['batch']['on-complete'].get('background-color', 'transparent')} Batch On Complete")
             elif element.tag == 'ee:cache':
                 tracking_vars['cache_source'] = self.clean_uml_syntax(tracking_vars['current_actor'])
                 content.append(f"alt Cache Miss")
@@ -452,8 +470,8 @@ class SequenceDiagramGenerator:
                 if tracking_vars['loop_event_source']:
                     loop_element = tracking_vars['loop_event_source']
                     # Handle format for various types of loops
-                    if loop_element.tag == 'foreach':
-                        content.append(f"loop {loop_element.attributes.get('documentation:name')} Collection: {loop_element.attributes.get('collection', '')}")
+                    if loop_element.tag in ['foreach', 'parallel-foreach']:
+                        content.append(f"loop {loop_element.attributes.get('documentation:name')}\\nCollection: {loop_element.attributes.get('collection', '')}")
                     elif loop_element.tag == 'until-successful':
                         until_successful_statment = "loop "
                         if 'until successful' in loop_element.attributes.get('documentation:name', '').lower(): 
@@ -612,6 +630,10 @@ class SequenceDiagramGenerator:
                 tracking_vars['previous_actor'] = async_previous_actor
                 if properties.diagram_formatting_options['async']['group']:
                     content.append("end")
+
+            # Ending any kind of Batch Job group
+            if element.tag in ['batch:job', 'batch:process-records', 'batch:on-complete', 'batch:step', 'batch:aggregator']:
+                content.append("end")
 
             # Ending a Cache
             if element.tag == 'ee:cache':

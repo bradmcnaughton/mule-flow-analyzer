@@ -63,6 +63,14 @@ diagram_formatting_options = {
         'note': False,
         'group': True,
         'background-color': 'goldenrod',
+    },
+    'batch': {
+        'step': {
+            'background-color': 'violet',
+        },
+        'on-complete': {
+            'background-color': 'lightgreen',
+        }
     }
 }
 

@@ -19,7 +19,8 @@ OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron', 'redelivery-policy']
 
 # List of Tags that should avoid being stored as processes, usually because they get put into a control flow element that shares a common prefix.
-NEVER_PROCESSOR_TAGS = ['transform']
+# Note - don't include namespace which may lead to issues if any processors of one namespace use the same tag as another namespace's element
+NEVER_PROCESSOR_TAGS = ['transform', 'process-records', 'step', 'aggregator', 'on-complete']
 
 class MuleFlowElement:
         
