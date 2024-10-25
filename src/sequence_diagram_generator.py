@@ -29,13 +29,11 @@ class SequenceDiagramGenerator:
         return input_string.replace('"', '\\"').replace('\n', '\\n')
 
     def clean_uml_syntax(self, input_string:str):
-        def quote_actor(actor):
-                if actor:
-                    return f"\"{actor}\""
-                else:
-                    return ""
-        
-        return quote_actor(input_string.replace("\"", "").replace(" [", "\\n["))
+        cleaned_string = input_string.replace("\"", "").replace(" [", "\\n[")
+        if cleaned_string:
+            return f"\"{cleaned_string}\""
+        else:
+            return ""
 
     def clean_uml_alias(self, input_string:str):
         # Remove special characters for PlantUML Aliases (:,-,spaces, quotes)
@@ -151,34 +149,41 @@ class SequenceDiagramGenerator:
                 alias = alias_from_config_ref(element)
                 description = f"{element.tag.split(':')[1]}"
                 class_name = "salesforce"
-            elif ":" in element.tag and element.tag.split(":")[0] not in properties.diagram_formatting_options['processors']['internal']:
-                # External Processor
-                alias = alias_from_config_ref(element)
-                description = f"{element.tag.split(':')[1]}"
-                class_name = "http"
+            elif ":" in element.tag:
+                if element.tag.split(":")[0] in properties.diagram_formatting_options['actors'].keys():
+                    class_name = element.tag.split(":")[0]
+                    alias = alias_from_config_ref(element)
+                    description = f"{element.tag.split(':')[1]}"
+                elif element.tag.split(":")[0] not in properties.diagram_formatting_options['processors']['internal']:
+                    # External Processor
+                    class_name = "http"
+                    alias = alias_from_config_ref(element)
+                    description = f"{element.tag.split(':')[1]}"
 
         return alias, description, class_name
 
-    def attributes_to_activities(self, element:MuleFlowElement, activities:list) -> list:
+    def attributes_to_activities(self, element:MuleFlowElement, activities:list, process_prefix:str=None) -> list:
         if len(element.attributes) > 0:
             # Attributes of the XML are mapped to activities
             for key, value in element.attributes.items():
+                if process_prefix:
+                    key = f"{process_prefix}.{key}"
                 activities.append(f"{key}: {value}")
         else:
             if element.content:
                 # Tag of the XML represents the activity
-                activities.append( element.tag.split(":")[-1].replace('-', ' ') )
-            else:
-                # The tag is a parent of a useful element, but doesn't add any information
-                pass
+                label = element.tag.split(":")[-1].replace('-', ' ')
+                if process_prefix:
+                    label = f"{process_prefix}.{label}"
+                activities.append(label)
 
         # Add the children process tags as well
         if len(element.processes) > 0:
+            process_prefix = element.tag.split(":")[-1]
             for child_process in element.processes:
-                activities = self.attributes_to_activities(child_process, activities)
+                activities = self.attributes_to_activities(child_process, activities, process_prefix)
             
         return activities
-
 
     def generate_sequence_diagram_syntax(self, flow:MuleFlowElement):
         
@@ -213,31 +218,26 @@ class SequenceDiagramGenerator:
         def record_actor(actor, actors_stack, actor_class:str="participant", relative_position:str="mule", sub_label:str=None) -> list:
             def format_actor(actor, actor_class):
                 actor_size = 56
+                actor_prefix = actor.split(":")[0].lower()
                 local_sub_label = sub_label
 
                 if not local_sub_label:
-                    if actor_class == "http" and actor != "HTTP":
+                    if (actor_class == "http" and actor != "HTTP") or actor_class in properties.diagram_formatting_options['actors'].keys():
                         local_sub_label = actor
                 
                 if local_sub_label:
                     actor_size = 30
-
-                # Get Formatting Options from properties
-                def actor_class_to_icon(actor_class):
-                    if actor_class in properties.diagram_formatting_options['actors'].keys():
-                        return properties.diagram_formatting_options['actors'][actor_class]
-                    else:
-                        return actor_class
 
                 # Switch the actor name to get the right UML participant type
                 if actor_class == "queue":
                     actor_class = "queue"
                 elif actor_class == "database":
                     actor_class = "database"
-                elif actor_class in ["email", "salesforce", "scheduler", "file", "http", "socket"]:
-                    actor_class = f"participant \"<size:{actor_size}>{actor_class_to_icon(actor_class)}\" as"
-                
+                elif actor_class in properties.diagram_formatting_options['actors'].keys():
+                    actor_class = f"participant \"<size:{actor_size}>{properties.diagram_formatting_options['actors'].get(actor_class, actor_class)}\" as"
+
                 # sub labels only apply to participants with as
+                # This is how an Icon gets a label underneath it
                 if local_sub_label and actor_class and actor_class.endswith("as"):
                     actor_class = f"{actor_class[:-4]}\\n{local_sub_label}{actor_class[-4:]}"
 
@@ -371,8 +371,6 @@ class SequenceDiagramGenerator:
                         else:
                             content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
                         choice_opened = True
-                        # TODO: Where to add this note? If choice is first element and there is no source, it can break
-                        #content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {str(element)}")
                         content = process_element(choice, content, tracking_vars)
                     else:
                         if element.tag == 'round-robin':
@@ -436,15 +434,15 @@ class SequenceDiagramGenerator:
                 content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
             elif element.tag.split(':')[0] == 'batch':
                 # Batch Branch Grouping
-                if element.tag == 'batch:job':
-                    content.append(f"group Batch Job {element.attributes.get('jobName', '')}")
-                elif element.tag == 'batch:process-records':
-                    content.append(f"group Batch Process Records")
-                elif element.tag == 'batch:step':
+                if element.tag == 'batch:job' and properties.diagram_formatting_options['batch']['job']['group']:
+                    content.append(f"group #{properties.diagram_formatting_options['batch']['job'].get('background-color', 'transparent')} Batch Job {element.attributes.get('jobName', '')}")
+                elif element.tag == 'batch:process-records' and properties.diagram_formatting_options['batch']['process-records']['group']:
+                    content.append(f"group #{properties.diagram_formatting_options['batch']['process-records'].get('background-color', 'transparent')} Batch Process Records")
+                elif element.tag == 'batch:step' and properties.diagram_formatting_options['batch']['step']['group']:
                     content.append(f"group #{properties.diagram_formatting_options['batch']['step'].get('background-color', 'transparent')} Batch Step {element.attributes.get('name', '')}, Accept Policy: {element.attributes.get('acceptPolicy', 'NO_FAILURES')}")
-                elif element.tag == 'batch:aggregator':
-                    content.append(f"group Batch Aggregator {element.attributes.get('name', '')}")
-                elif element.tag == 'batch:on-complete':
+                elif element.tag == 'batch:aggregator' and properties.diagram_formatting_options['batch']['aggregator']['group']    :
+                    content.append(f"group #{properties.diagram_formatting_options['batch']['aggregator'].get('background-color', 'transparent')} Batch Aggregator {element.attributes.get('name', '')}")
+                elif element.tag == 'batch:on-complete' and properties.diagram_formatting_options['batch']['on-complete']['group']:
                     content.append(f"group #{properties.diagram_formatting_options['batch']['on-complete'].get('background-color', 'transparent')} Batch On Complete")
             elif element.tag == 'ee:cache':
                 tracking_vars['cache_source'] = self.clean_uml_syntax(tracking_vars['current_actor'])
@@ -501,7 +499,8 @@ class SequenceDiagramGenerator:
                         tracking_vars['transaction_stack'].append(element.attributes.get('transactionType', None))
                         content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]} : {element.attributes.get('transactionType', None)} Transaction Starting")
 
-                # Append the incoming call line
+                
+                # Append the incoming call line ----------------------------->
                 # (Skip if event source)
                 if not tracking_vars['event_source'] and len(tracking_vars['parallel_sources']) == 0:                                   
                     content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
@@ -536,13 +535,16 @@ class SequenceDiagramGenerator:
                     # Append the internal workings of the processor as actions on itself
                     activities = []
                     for process in element.processes:
-                        activities = self.attributes_to_activities(process, activities)
+                        activities = self.attributes_to_activities(process, activities, process_prefix=element.tag.split(":")[-1])
 
                     for activity in activities:
                         content.append(sequence_line_formatter(tracking_vars['current_actor'], tracking_vars['current_actor'], activity, arrow_style=arrow_style, tracking_vars=tracking_vars))
                     
                 if not tracking_vars['event_source']:
-                    # Check if we should add a target side actor (Downstream System)
+                    
+                    # Check if we should add a target side actor  -----------------------------> 0
+                    # (Downstream System)                         <----------------------------- 0
+                     
                     target_alias, target_description, target_class_name = self.pretty_participant(element, source_or_target="target")
                     if target_alias:
                         # Aliases can't have spaces in plantuml so we will keep only first word as the alias and the rest as a sub label
@@ -577,7 +579,7 @@ class SequenceDiagramGenerator:
  
                         tracking_vars['actors_stack'] = record_actor(tracking_vars['alias_reference'].get(str(element), target_alias), tracking_vars['actors_stack'], target_class_name, relative_position="target", sub_label=target_alias_sub_label)
                         
-                        # Outbound line to external target
+                        # Outbound line to external target ---------------------> 0
                         content.append(sequence_line_formatter(
                             tracking_vars['current_actor'],
                             tracking_vars['alias_reference'].get(str(element),target_alias),
@@ -586,7 +588,7 @@ class SequenceDiagramGenerator:
                             tracking_vars=tracking_vars
                         ))
 
-                        # Return line to the current actor
+                        # Return line to the current actor <-------------------- 0
                         content.append(sequence_line_formatter(
                             tracking_vars['alias_reference'].get(str(element), target_alias),
                             tracking_vars['current_actor'],
@@ -633,7 +635,8 @@ class SequenceDiagramGenerator:
 
             # Ending any kind of Batch Job group
             if element.tag in ['batch:job', 'batch:process-records', 'batch:on-complete', 'batch:step', 'batch:aggregator']:
-                content.append("end")
+                if properties.diagram_formatting_options['batch'][element.tag.split(':')[1]]['group']:
+                    content.append("end")
 
             # Ending a Cache
             if element.tag == 'ee:cache':

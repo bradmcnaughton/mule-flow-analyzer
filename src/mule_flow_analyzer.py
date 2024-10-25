@@ -171,12 +171,10 @@ class MuleFlowAnalyzer:
 
             # If the element has no attributes, content, and no children of their own, skip it
             if not element.attrib and (not element.text or element.text.strip() == ''):
+                # No content and no children = Skip
                 if len(element) == 0:
                     return None
-                elif len(element) > 1:
-                    # TODO: Consider flattening the element into a single child
-                    # Need to consider handling multiple children
-                    pass
+
             
             children = []
             processes = []

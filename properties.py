@@ -15,14 +15,14 @@ skimparam_options = [
     '}',
     'skinparam {',
     'wrapWidth 200',
-    'maxMessageSize 200',
+    'maxMessageSize 300',
     '}'
 ]
 
 # All colors should be in CSS format with no hash
 # e.g. #DD1122 should be DD1122
 # English names can be found here: https://plantuml.com/en/color
-# Gradients should be specified as color1(/|\-)color2 without hashes
+# Gradients should be specified as color1(/|\-)color2 without hashes. E.G. LightBlue-6FBBD3
 diagram_formatting_options = {
     'mule': {
         'box-color': 'LightBlue-6FBBD3',
@@ -34,7 +34,8 @@ diagram_formatting_options = {
         'notes': True, # Include documentation tag as a Note on the actor
     },
     'actors': {
-        # Set any combination of icon and formatting options for specific actors
+        # Set any combination of icon and formatting options for specific mule components, by namespace prefix
+        # Icons will appear on the source/target actors outside the Mule Box
         # Icon names can be found here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
         'salesforce': '<color:#00A1E0><&cloud>',
         'email': '<&envelope-closed>',
@@ -42,9 +43,11 @@ diagram_formatting_options = {
         'file': '<&file>',
         'http': '<&globe>',
         'socket': '<&link-intact>',
+        'workday': '<&wrench>',
+        'some-customers-sapi': '<&person>'
     },
     'processors': {
-        'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module']
+        'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module', 'mule-apikit']
     },
     'transactions':
     {
@@ -64,13 +67,29 @@ diagram_formatting_options = {
         'group': True,
         'background-color': 'goldenrod',
     },
+    # Set Group to False to disable grouping for any level of batch elements
+    # (Optionally) color the groups for any level of batch elements
     'batch': {
         'step': {
             'background-color': 'violet',
+            'group': True,
         },
         'on-complete': {
             'background-color': 'lightgreen',
-        }
+            'group': True,
+        },
+        'job': {
+            'background-color': 'cyan',
+            'group': False,
+        },
+        'process-records': {
+            'background-color': 'green',
+            'group': True,
+        },
+        'aggregator': {
+            'background-color': 'lightyellow',
+            'group': False,
+        },
     }
 }
 
