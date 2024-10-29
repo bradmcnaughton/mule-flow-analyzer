@@ -455,61 +455,6 @@ class MuleFlowAnalyzer:
         
         return xml_string
 
-    # Old XMLDICT version, delete once replaced with above
-    """ def _process_xml_structure_replace_placeholders_old(self, element, indent=0):
-        indent_str = "  " * indent
-        
-        if isinstance(element, dict):
-            for tag, content in element.items():
-                if isinstance(content, dict):
-                    if self.debug_xml and self.debug_options["tag"]:
-                        print(f"{indent_str}Tag: {tag}")
-                    if '@attributes' in content:
-                        for attr_key, attr_value in content['@attributes'].items():
-                            if isinstance(attr_value, str) and self._contains_placeholder(attr_value):
-                                content['@attributes'][attr_key] = self._resolve_placeholder(attr_value)
-                    if '#text' in content:
-                        if isinstance(content['#text'], str) and self._contains_placeholder(content['#text']):
-                            content['#text'] = self._resolve_placeholder(content['#text'])
-                    self._process_xml_structure_replace_placeholders(content, indent + 1)
-                elif isinstance(content, list):
-                    for item in content:
-                        if self.debug_xml and self.debug_options["tag"]:
-                            print(f"{indent_str}Tag: {tag} (repeated)")
-                        self._process_xml_structure_replace_placeholders(item, indent + 1)
-                else:
-                    if isinstance(content, str) and self._contains_placeholder(content):
-                        element[tag] = self._resolve_placeholder(content)
-                    if self.debug_xml and self.debug_options["content"]:
-                        print(f"{indent_str}Tag: {tag}, Content: {element[tag]}")
-        elif isinstance(element, list):
-            for item in element:
-    """
-    # Old XMLDICT version, delete once replaced with above
-    """ def _resolve_placeholder(self, text):
-        def replace_placeholder(placeholder, wrapper=None):
-            for _, prop_dict in sorted(self.discovered_properties.items()):
-                if placeholder in prop_dict:
-                    return prop_dict[placeholder]
-            # Return original if no replacement found, using the appropriate wrapper
-            if wrapper == 'Mule::p':
-                return f"Mule::p({placeholder})"
-            elif wrapper == 'p':
-                return f"p('{placeholder}')"
-            else:
-                return f"${{{placeholder}}}"
-
-        # Handle ${...} placeholders, including those wrapped in quotes
-        text = re.sub(r'(?:\'|\")?\$\{([^}]+)\}(?:\'|\")?', lambda m: replace_placeholder(m.group(1)), text)
-
-        # Handle Mule::p(...) placeholders
-        text = re.sub(r'Mule::p\(([^)]+)\)', lambda m: replace_placeholder(m.group(1).strip("'\""), 'Mule::p'), text)
-
-        # Handle p('...') or p("...") placeholders
-        text = re.sub(r"p\((['\"])([^)]+)\1\)", lambda m: replace_placeholder(m.group(2), 'p'), text)
-
-        return text """
-
     def analyze_mule_flows(self, flow_name: str = None):
         self._prepare_analysis_xml(flow_name)
 
@@ -538,6 +483,7 @@ class MuleFlowAnalyzer:
         for flow in flows:
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
+            legend_file = mule_sequence_diagram_generator.render_legend(mule_sequence_diagram_generator.arrow_legend, flow.attributes.get('name'))
             print(f"Generated {image_file}")
 
 

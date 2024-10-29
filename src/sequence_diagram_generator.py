@@ -6,14 +6,43 @@ import properties
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
 
+class ArrowType:
+    def __init__(self, label: str, arrow: str, priority: int):
+        self.label = label
+        self.arrow = arrow 
+        self.priority = priority
+
 class SequenceDiagramGenerator:
     def __init__(self):
         
         self.mule_box_format = f"box #{properties.diagram_formatting_options['mule']['box-color']}"
         
         self.skimparam_options = properties.skimparam_options
+
+        self.arrow_legend = {}
         
         pass
+
+
+    def add_arrow_to_legend(self, arrow_type, label):
+        
+        high_priority_arrows = ['->']
+        
+        if arrow_type not in self.arrow_legend.keys():
+            if arrow_type in high_priority_arrows:
+                priority = 0
+            else:
+                priority = len(self.arrow_legend) + 1
+
+            label = label if label else next((k.capitalize() for k, v in properties.diagram_formatting_options['arrows'].items() if v == arrow_type), arrow_type)
+
+            self.arrow_legend[arrow_type] = ArrowType(
+                label=label,
+                arrow=arrow_type,
+                priority=priority
+            )
+
+
 
     def remove_expression_brackets(self, input_string:str) -> str:
         """
@@ -190,6 +219,9 @@ class SequenceDiagramGenerator:
         def sequence_line_formatter(source_actor, target_actor, description=None, arrow_style="->", tracking_vars:dict=None):
             cleaned_source_actor = self.clean_uml_syntax(source_actor) if source_actor else "" 
             cleaned_target_actor = self.clean_uml_syntax(target_actor) if target_actor else ""
+            
+            arrow_label = None
+            
             # Description should not need to be quoted
             cleaned_description = description if description else ""
             
@@ -213,6 +245,8 @@ class SequenceDiagramGenerator:
             else:
                 mode_string = ""
             
+            self.add_arrow_to_legend(arrow_style, arrow_label)
+
             return f"{cleaned_source_actor} {arrow_style} {cleaned_target_actor} {mode_string}: {cleaned_description}"
         
         def record_actor(actor, actors_stack, actor_class:str="participant", relative_position:str="mule", sub_label:str=None) -> list:
@@ -331,6 +365,7 @@ class SequenceDiagramGenerator:
                     tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
                     str(event_source), 
                     event_source_description, 
+                    properties.diagram_formatting_options['arrows']['flow'],
                     tracking_vars=tracking_vars))
 
         # Even though the Event Source has started the diagram, we can add the title now
@@ -456,7 +491,7 @@ class SequenceDiagramGenerator:
             #--------------------------------------------------------------------------------------------
             elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
                 # Default arrow style, Can be overridden by async or transaction
-                arrow_style="->"
+                arrow_style=properties.diagram_formatting_options['arrows']['flow']
                 
                 # Previous actor is calling this element (may be self)
                 tracking_vars['current_actor'] = str(element)
@@ -486,7 +521,7 @@ class SequenceDiagramGenerator:
 
                 # check if element is starting an async process
                 if tracking_vars['async_source']:
-                    arrow_style="->>"
+                    arrow_style=properties.diagram_formatting_options['arrows']['async']
                     tracking_vars['async_source'] = None
 
                 # Check if element is starting a transaction
@@ -507,7 +542,7 @@ class SequenceDiagramGenerator:
                 elif len(tracking_vars['parallel_sources']) > 0:
                     # Add the parallel sources consolidating
                     for parallel_source in tracking_vars['parallel_sources']:
-                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style="-\\", tracking_vars=tracking_vars))
+                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style=properties.diagram_formatting_options['arrows']['parallel'], tracking_vars=tracking_vars))
                     # Clear tracking_vars['parallel_sources']
                     tracking_vars['parallel_sources'] = []
 
@@ -593,7 +628,7 @@ class SequenceDiagramGenerator:
                             tracking_vars['alias_reference'].get(str(element), target_alias),
                             tracking_vars['current_actor'],
                             None,
-                            arrow_style="-->",
+                            arrow_style=properties.diagram_formatting_options['arrows']['return'],
                             tracking_vars=tracking_vars
                         ))
 
@@ -641,7 +676,7 @@ class SequenceDiagramGenerator:
             # Ending a Cache
             if element.tag == 'ee:cache':
                 content.append("else Cache Hit")
-                content.append(sequence_line_formatter(tracking_vars['cache_source'], tracking_vars['current_actor'], 'Use Cached Value', tracking_vars=tracking_vars))
+                content.append(sequence_line_formatter(tracking_vars['cache_source'], tracking_vars['current_actor'], 'Use Cached Value', arrow_style=properties.diagram_formatting_options['arrows']['flow'], tracking_vars=tracking_vars))
                 content.append("end")
                 tracking_vars['cache_source'] = None
 
@@ -716,6 +751,46 @@ class SequenceDiagramGenerator:
 
         return content
 
+
+    def render_legend(self, arrow_legend:dict, flow_name:str):
+        """
+        @startuml
+
+        !procedure $arrow($legend, $text)
+        \n<font:monospaced.bold>$legend</font> => \n{{\ntop to bottom direction\nskinparam backgroundcolor transparent\nlabel " " as A\nlabel " " as B\nA $text B\n}}\n
+        !endprocedure
+
+        map "Legend" as arrows {
+            $arrow("Flow", "->")
+            $arrow("Return", "-[dashed]>")
+            $arrow("Parallel", "-\\\\")
+            $arrow("Async", "->>")
+            $arrow("Transaction", "-[#red]>")
+            $arrow("Transaction Return", "-[#red,dashed]>")
+        }
+
+        @enduml
+        """
+        
+        # ignore this until later:
+        # \n<size:64><&globe>\n=> \n\nHTTP Endpoint
+
+
+        content = []
+        content.append("@startuml")
+        content.append("!procedure $arrow($legend, $text)") 
+        content.append("\\n<font:monospaced.bold>$legend</font> => \\n{{\\nleft to right direction\\nskinparam backgroundcolor transparent\\nlabel \" \" as A\\nlabel \" \" as B\\nA $text B\\n}}\\n")
+        content.append("!endprocedure")
+        content.append("map \"Legend\" as arrows {")
+        for arrow, arrow_details in arrow_legend.items():
+            # See above for how to style, need to add more details to the properties probably
+            # doesn't support arrows ending with o or x
+            content.append(f"  $arrow(\"{arrow_details.label}\", \"{arrow}\")")
+        content.append("}")
+        content.append("@enduml")
+
+        self.render_image(content, flow_name + "_legend")
+        pass
 
     def render_image(self, diagram_syntax:list, flow_name:str):
         import properties

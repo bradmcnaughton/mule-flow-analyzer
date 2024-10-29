@@ -33,6 +33,12 @@ diagram_formatting_options = {
         'errors': False, # Include the error handler processors in the diagram
         'notes': True, # Include documentation tag as a Note on the actor
     },
+    'arrows': {
+        'flow': '->',
+        'return': '-->',
+        'async': '->>',
+        'parallel': '-\\'
+    },
     'actors': {
         # Set any combination of icon and formatting options for specific mule components, by namespace prefix
         # Icons will appear on the source/target actors outside the Mule Box
