@@ -1,7 +1,6 @@
 import os
 import re
 from src.mule_flow_analyzer import MuleFlowElement
-import properties
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
@@ -13,16 +12,14 @@ class ArrowType:
         self.priority = priority
 
 class SequenceDiagramGenerator:
-    def __init__(self):
+    def __init__(self, configuration_properties:dict):
         
-        self.mule_box_format = f"box #{properties.diagram_formatting_options['mule']['box-color']}"
-        
-        self.skimparam_options = properties.skimparam_options
+        self.properties = configuration_properties
 
+        self.mule_box_format = f"box #{self.properties['diagram_formatting_properties']['mule']['box-color']}"
+        self.skinparam_options = self.properties['diagram_formatting_properties']['skinparam']
         self.arrow_legend = {}
         
-        pass
-
 
     def add_arrow_to_legend(self, arrow_type, label):
         
@@ -34,7 +31,7 @@ class SequenceDiagramGenerator:
             else:
                 priority = len(self.arrow_legend) + 1
 
-            label = label if label else next((k.capitalize() for k, v in properties.diagram_formatting_options['arrows'].items() if v == arrow_type), arrow_type)
+            label = label if label else next((k.capitalize() for k, v in self.properties['diagram_formatting_properties']['arrows'].items() if v == arrow_type), arrow_type)
 
             self.arrow_legend[arrow_type] = ArrowType(
                 label=label,
@@ -179,11 +176,11 @@ class SequenceDiagramGenerator:
                 description = f"{element.tag.split(':')[1]}"
                 class_name = "salesforce"
             elif ":" in element.tag:
-                if element.tag.split(":")[0] in properties.diagram_formatting_options['actors'].keys():
+                if element.tag.split(":")[0] in self.properties['diagram_formatting_properties']['actors'].keys():
                     class_name = element.tag.split(":")[0]
                     alias = alias_from_config_ref(element)
                     description = f"{element.tag.split(':')[1]}"
-                elif element.tag.split(":")[0] not in properties.diagram_formatting_options['processors']['internal']:
+                elif element.tag.split(":")[0] not in self.properties['diagram_formatting_properties']['processors']['internal']:
                     # External Processor
                     class_name = "http"
                     alias = alias_from_config_ref(element)
@@ -228,7 +225,7 @@ class SequenceDiagramGenerator:
             # inject colour into arrows depending on the tracking vars
             if tracking_vars and 'transaction_stack' in tracking_vars.keys() and len(tracking_vars['transaction_stack']) > 0:
                 arrow_colour = f"[#{
-                    properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
+                    self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
             else:
                 arrow_colour = ""
 
@@ -256,7 +253,7 @@ class SequenceDiagramGenerator:
                 local_sub_label = sub_label
 
                 if not local_sub_label:
-                    if (actor_class == "http" and actor != "HTTP") or actor_class in properties.diagram_formatting_options['actors'].keys():
+                    if (actor_class == "http" and actor != "HTTP") or actor_class in self.properties['diagram_formatting_properties']['actors'].keys():
                         local_sub_label = actor
                 
                 if local_sub_label:
@@ -267,8 +264,8 @@ class SequenceDiagramGenerator:
                     actor_class = "queue"
                 elif actor_class == "database":
                     actor_class = "database"
-                elif actor_class in properties.diagram_formatting_options['actors'].keys():
-                    actor_class = f"participant \"<size:{actor_size}>{properties.diagram_formatting_options['actors'].get(actor_class, actor_class)}\" as"
+                elif actor_class in self.properties['diagram_formatting_properties']['actors'].keys():
+                    actor_class = f"participant \"<size:{actor_size}>{self.properties['diagram_formatting_properties']['actors'].get(actor_class, actor_class)}\" as"
 
                 # sub labels only apply to participants with as
                 # This is how an Icon gets a label underneath it
@@ -307,16 +304,16 @@ class SequenceDiagramGenerator:
             'parallel_sources': [],
             'async_source': None,
             'cache_source': None,
-            'create_mode': properties.diagram_formatting_options['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
+            'create_mode': self.properties['diagram_formatting_properties']['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
         }
 
         # The content list will be used to build the diagram syntax
         content = []
         content.append("@startuml")
                
-        if self.skimparam_options:
+        if self.skinparam_options:
             content.append("'start formatting")
-            content += self.skimparam_options
+            content += self.skinparam_options
             content.append("'end formatting")
 
         # insert participants placeholder
@@ -365,7 +362,7 @@ class SequenceDiagramGenerator:
                     tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
                     str(event_source), 
                     event_source_description, 
-                    properties.diagram_formatting_options['arrows']['flow'],
+                    self.properties['diagram_formatting_properties']['arrows']['flow'],
                     tracking_vars=tracking_vars))
 
         # Even though the Event Source has started the diagram, we can add the title now
@@ -459,26 +456,26 @@ class SequenceDiagramGenerator:
                 tracking_vars['async_source'] = str(element.tag)
                 async_previous_actor = tracking_vars['previous_actor']
                 
-                if properties.diagram_formatting_options['async']['note']:
+                if self.properties['diagram_formatting_properties']['async']['note']:
                     # Append the async start Note
-                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} #{properties.diagram_formatting_options.get('async', {}).get('background-color', 'transparent')}: Async Start")
-                if properties.diagram_formatting_options['async']['group']:
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} #{self.properties['diagram_formatting_properties'].get('async', {}).get('background-color', 'transparent')}: Async Start")
+                if self.properties['diagram_formatting_properties']['async']['group']:
                     # Wrap the async in a group
-                    content.append(f"group #{properties.diagram_formatting_options['async'].get('background-color', 'transparent')} async")
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['async'].get('background-color', 'transparent')} async")
             elif element.tag == 'try':
                 content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
             elif element.tag.split(':')[0] == 'batch':
                 # Batch Branch Grouping
-                if element.tag == 'batch:job' and properties.diagram_formatting_options['batch']['job']['group']:
-                    content.append(f"group #{properties.diagram_formatting_options['batch']['job'].get('background-color', 'transparent')} Batch Job {element.attributes.get('jobName', '')}")
-                elif element.tag == 'batch:process-records' and properties.diagram_formatting_options['batch']['process-records']['group']:
-                    content.append(f"group #{properties.diagram_formatting_options['batch']['process-records'].get('background-color', 'transparent')} Batch Process Records")
-                elif element.tag == 'batch:step' and properties.diagram_formatting_options['batch']['step']['group']:
-                    content.append(f"group #{properties.diagram_formatting_options['batch']['step'].get('background-color', 'transparent')} Batch Step {element.attributes.get('name', '')}, Accept Policy: {element.attributes.get('acceptPolicy', 'NO_FAILURES')}")
-                elif element.tag == 'batch:aggregator' and properties.diagram_formatting_options['batch']['aggregator']['group']    :
-                    content.append(f"group #{properties.diagram_formatting_options['batch']['aggregator'].get('background-color', 'transparent')} Batch Aggregator {element.attributes.get('name', '')}")
-                elif element.tag == 'batch:on-complete' and properties.diagram_formatting_options['batch']['on-complete']['group']:
-                    content.append(f"group #{properties.diagram_formatting_options['batch']['on-complete'].get('background-color', 'transparent')} Batch On Complete")
+                if element.tag == 'batch:job' and self.properties['diagram_formatting_properties']['batch']['job']['group']:
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['batch']['job'].get('background-color', 'transparent')} Batch Job {element.attributes.get('jobName', '')}")
+                elif element.tag == 'batch:process-records' and self.properties['diagram_formatting_properties']['batch']['process-records']['group']:
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['batch']['process-records'].get('background-color', 'transparent')} Batch Process Records")
+                elif element.tag == 'batch:step' and self.properties['diagram_formatting_properties']['batch']['step']['group']:
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['batch']['step'].get('background-color', 'transparent')} Batch Step {element.attributes.get('name', '')}, Accept Policy: {element.attributes.get('acceptPolicy', 'NO_FAILURES')}")
+                elif element.tag == 'batch:aggregator' and self.properties['diagram_formatting_properties']['batch']['aggregator']['group']    :
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['batch']['aggregator'].get('background-color', 'transparent')} Batch Aggregator {element.attributes.get('name', '')}")
+                elif element.tag == 'batch:on-complete' and self.properties['diagram_formatting_properties']['batch']['on-complete']['group']:
+                    content.append(f"group #{self.properties['diagram_formatting_properties']['batch']['on-complete'].get('background-color', 'transparent')} Batch On Complete")
             elif element.tag == 'ee:cache':
                 tracking_vars['cache_source'] = self.clean_uml_syntax(tracking_vars['current_actor'])
                 content.append(f"alt Cache Miss")
@@ -491,7 +488,7 @@ class SequenceDiagramGenerator:
             #--------------------------------------------------------------------------------------------
             elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
                 # Default arrow style, Can be overridden by async or transaction
-                arrow_style=properties.diagram_formatting_options['arrows']['flow']
+                arrow_style=self.properties['diagram_formatting_properties']['arrows']['flow']
                 
                 # Previous actor is calling this element (may be self)
                 tracking_vars['current_actor'] = str(element)
@@ -521,7 +518,7 @@ class SequenceDiagramGenerator:
 
                 # check if element is starting an async process
                 if tracking_vars['async_source']:
-                    arrow_style=properties.diagram_formatting_options['arrows']['async']
+                    arrow_style=self.properties['diagram_formatting_properties']['arrows']['async']
                     tracking_vars['async_source'] = None
 
                 # Check if element is starting a transaction
@@ -532,7 +529,7 @@ class SequenceDiagramGenerator:
                         # TODO: Handle local transactions having ALWAYS_BEGIN when an existing transaction is already in progress
                         # (That should be an error)
                         tracking_vars['transaction_stack'].append(element.attributes.get('transactionType', None))
-                        content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]} : {element.attributes.get('transactionType', None)} Transaction Starting")
+                        content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])} #{self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]} : {element.attributes.get('transactionType', None)} Transaction Starting")
 
                 
                 # Append the incoming call line ----------------------------->
@@ -542,7 +539,7 @@ class SequenceDiagramGenerator:
                 elif len(tracking_vars['parallel_sources']) > 0:
                     # Add the parallel sources consolidating
                     for parallel_source in tracking_vars['parallel_sources']:
-                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style=properties.diagram_formatting_options['arrows']['parallel'], tracking_vars=tracking_vars))
+                        content.append(sequence_line_formatter(parallel_source, tracking_vars['current_actor'], arrow_style=self.properties['diagram_formatting_properties']['arrows']['parallel'], tracking_vars=tracking_vars))
                     # Clear tracking_vars['parallel_sources']
                     tracking_vars['parallel_sources'] = []
 
@@ -553,7 +550,7 @@ class SequenceDiagramGenerator:
 
                 # Check if element is raising an error and note the error handler
                 if element.tag == 'raise-error':
-                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
+                    note = f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{self.properties['diagram_formatting_properties'].get('errors', {}).get('color', 'transparent')}: Raising Error:\\n{element.attributes.get('type', 'Missing Error Type')}"
                     if tracking_vars['error_handler_ref']:
                         note += f"\\n\\nError Handler:\\n{tracking_vars['error_handler_ref']}"
                     else:
@@ -561,7 +558,7 @@ class SequenceDiagramGenerator:
                     content.append(note)
 
                 # Add any documentation as a note above.
-                if properties.diagram_formatting_options['verbose']['notes']:
+                if self.properties['diagram_formatting_properties']['verbose']['notes']:
                     if element.attributes.get('documentation:description', None):
                         content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: { self.clean_uml_note(element.attributes.get('documentation:description')) }")
                 
@@ -628,7 +625,7 @@ class SequenceDiagramGenerator:
                             tracking_vars['alias_reference'].get(str(element), target_alias),
                             tracking_vars['current_actor'],
                             None,
-                            arrow_style=properties.diagram_formatting_options['arrows']['return'],
+                            arrow_style=self.properties['diagram_formatting_properties']['arrows']['return'],
                             tracking_vars=tracking_vars
                         ))
 
@@ -648,9 +645,9 @@ class SequenceDiagramGenerator:
             # Ending a Transaction
             if len(tracking_vars['transaction_stack']) > 0 and element.tag in transactions_success_list + transactions_failure_list:
                 if element.tag in transactions_success_list:
-                    content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])}  #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}: {tracking_vars['transaction_stack'][-1]} Transaction End")
+                    content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])}  #{self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}: {tracking_vars['transaction_stack'][-1]} Transaction End")
                 else:
-                    content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])}  #{properties.diagram_formatting_options['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}: \"{tracking_vars['transaction_stack'][-1]} Transaction Failure\"")
+                    content.append(f"note right of {self.clean_uml_syntax(tracking_vars['current_actor'])}  #{self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}: \"{tracking_vars['transaction_stack'][-1]} Transaction Failure\"")
                 tracking_vars['transaction_stack'].pop()
             
             # Ending a Group
@@ -665,25 +662,25 @@ class SequenceDiagramGenerator:
             if element.tag == 'async':
                 # Ensure the previous actor is set back to the async executor
                 tracking_vars['previous_actor'] = async_previous_actor
-                if properties.diagram_formatting_options['async']['group']:
+                if self.properties['diagram_formatting_properties']['async']['group']:
                     content.append("end")
 
             # Ending any kind of Batch Job group
             if element.tag in ['batch:job', 'batch:process-records', 'batch:on-complete', 'batch:step', 'batch:aggregator']:
-                if properties.diagram_formatting_options['batch'][element.tag.split(':')[1]]['group']:
+                if self.properties['diagram_formatting_properties']['batch'][element.tag.split(':')[1]]['group']:
                     content.append("end")
 
             # Ending a Cache
             if element.tag == 'ee:cache':
                 content.append("else Cache Hit")
-                content.append(sequence_line_formatter(tracking_vars['cache_source'], tracking_vars['current_actor'], 'Use Cached Value', arrow_style=properties.diagram_formatting_options['arrows']['flow'], tracking_vars=tracking_vars))
+                content.append(sequence_line_formatter(tracking_vars['cache_source'], tracking_vars['current_actor'], 'Use Cached Value', arrow_style=self.properties['diagram_formatting_properties']['arrows']['flow'], tracking_vars=tracking_vars))
                 content.append("end")
                 tracking_vars['cache_source'] = None
 
             # Ending a Try
             elif element.tag == 'try':
                 content.append(f"else Error Handling")
-                if properties.diagram_formatting_options['verbose']['errors']:
+                if self.properties['diagram_formatting_properties']['verbose']['errors']:
                     # Track the last actor before the error handler
                     try_previous_actor = tracking_vars['previous_actor']
                     # Add the error handler's processors
@@ -699,7 +696,7 @@ class SequenceDiagramGenerator:
                         alt_count = 0
                         
                         if do_alt:
-                            content.append(f"alt#{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')} {str(element.error_handler_element.children[0])}")
+                            content.append(f"alt#{self.properties['diagram_formatting_properties'].get('errors', {}).get('color', 'transparent')} {str(element.error_handler_element.children[0])}")
                             alt_count = 1
                         
                         for child in element.error_handler_element.children:
@@ -717,11 +714,11 @@ class SequenceDiagramGenerator:
                             content.append("end")
 
                         # Reset the create mode to the global setting
-                        tracking_vars['create_mode'] = properties.diagram_formatting_options['create_mode']
+                        tracking_vars['create_mode'] = self.properties['diagram_formatting_properties']['create_mode']
                     # Reset the previous actor to the last actor before the error handler
                     tracking_vars['previous_actor'] = try_previous_actor
                 else:
-                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{properties.diagram_formatting_options.get('errors', {}).get('color', 'transparent')}: {element.error_handler_ref}")
+                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])} #{self.properties['diagram_formatting_properties'].get('errors', {}).get('color', 'transparent')}: {element.error_handler_ref}")
                 # End the Try Catch
                 content.append("end")
 
@@ -793,9 +790,9 @@ class SequenceDiagramGenerator:
         pass
 
     def render_image(self, diagram_syntax:list, flow_name:str):
-        import properties
+        import default_properties
         from plantweb.render import render_file
-        plantuml_output_directory = properties.analyzer_properties['plantuml']['output_directory']
+        plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
         # Remove special characters from flow_name
         flow_name_file_name = re.sub(r'[^a-zA-Z0-9_]', '_', flow_name)

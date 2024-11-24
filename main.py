@@ -1,6 +1,12 @@
 import argparse
 import os
+import yaml
 from src.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
+
+
+def load_user_config(file_path):
+    with open(file_path, 'r') as f:
+        return yaml.safe_load(f)
 
 def main():
     parser = argparse.ArgumentParser(description="Mule Flow Analyzer")
@@ -10,19 +16,25 @@ def main():
                         help="A comma-separated list of property file names relative to the src/main/resources directory")
     parser.add_argument("-f", "--flow-name", default=None,
                         help="The name of the flow to generate a diagram for")
+    parser.add_argument("-c", "--config-path", default=None,
+                        help="The path to a config.yaml file to use for diagram generation")
 
     args = parser.parse_args()
 
     project_path = args.project_path
     properties_hierarchy = None
     flow_name = args.flow_name
+    user_config = None
     
+    if args.config_path:
+        user_config = load_user_config(args.config_path)
+
     if args.properties_hierarchy:
         prop_files = args.properties_hierarchy.split(',')
         properties_hierarchy = PropertyHierarchy({i: filename.strip() for i, filename in enumerate(prop_files)})
 
     try:
-        analyzer = MuleFlowAnalyzer(project_path, properties_hierarchy)
+        analyzer = MuleFlowAnalyzer(project_path, properties_hierarchy, user_config)
 
         if not properties_hierarchy:
             # Display discovered property files and prompt user for selection

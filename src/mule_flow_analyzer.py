@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Dict, NewType
 import yaml
 import re
-from typing import List, Optional, Dict
-from xml.sax.saxutils import escape, unescape
+import copy
+
+from src.mule_flow_element import MuleFlowElement
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
@@ -22,70 +23,20 @@ ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron', 'rede
 # Note - don't include namespace which may lead to issues if any processors of one namespace use the same tag as another namespace's element
 NEVER_PROCESSOR_TAGS = ['transform', 'process-records', 'step', 'aggregator', 'on-complete']
 
-class MuleFlowElement:
-        
-    def __init__(self, 
-                 tag: str, 
-                 attributes: Dict[str, str] = None, 
-                 children: List['MuleFlowElement'] = None, 
-                 processes: List['MuleFlowElement'] = None, 
-                 content: str = "",
-                 notes: str = "", 
-                 standalone: bool = True, 
-                 error_handler_ref: Optional[str] = None,
-                 error_handler_element: Optional[List['MuleFlowElement']] = None):
-        self.tag = tag
-        self.attributes = attributes or {}
-        
-        self.children = children or []
-        self.processes = processes or []
-        self.content = content
-        print(f"Processing {self.tag}")
-
-        self.notes = notes
-        self.standalone = standalone
-        self.error_handler_ref = error_handler_ref
-        self.error_handler_element = error_handler_element
-
-    def __str__(self):
-        # A Case Statement to handle stringifying the tag based on the key attributes of the element
-        # Defaults to name if no other identifier is found
-        # Extend as needed
-        if self.tag == 'set-variable':
-            identifier = self.attributes.get('variableName') or ''
-        elif self.tag in ['on-error-propagate', 'on-error-continue']:
-            identifier = self.attributes.get('when') or self.attributes.get('type') or '' 
-        else:
-            identifier = self.attributes.get('name') or self.attributes.get('documentation:name') or ''
-        return f"{self.tag} [{identifier}]" if identifier else self.tag
-
-    def add_child(self, child: 'MuleFlowElement'):
-        self.children.append(child)
-
-    def set_note(self, note: str):
-        self.notes = note
-
-    def set_error_handler_ref(self, ref: str):
-        self.error_handler_ref = ref
-
-    """
-    Get all flows in the current element
-    If flow_name is provided, return only the flow with that name
-    """
-    def get_flows(self, flow_name: str = None) -> List['MuleFlowElement']:
-        flows = []
-        for child in self.children:
-            if child.tag in ['flow']:
-                if flow_name is None or child.attributes.get('name') == flow_name:
-                    flows.append(child)
-        return flows
-
 class MuleFlowAnalyzer:
-    def __init__(self, project_path: str, property_files: PropertyHierarchy = None):
+    
+    def __init__(self, project_path: str, property_files: PropertyHierarchy = None, user_config: dict = None):
         self.project_path = project_path
         self.project_files = {}
         self.properties_hierarchy = PropertyHierarchy({})
         self.discovered_properties = None
+
+        # Merge user config with default properties
+        from default_properties import DEFAULT_PROPERTIES
+        if user_config:
+            self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
+        else:
+            self.configuration_properties = DEFAULT_PROPERTIES
 
         # Debugging Flag - will be replaced with actual input flag later
         self.debug_xml = True
@@ -111,6 +62,23 @@ class MuleFlowAnalyzer:
             self.set_properties_hierarchy(property_files)
         else:
             self._populate_properties_hierarchy()
+
+    def _recursive_merge(self, defaults, overrides):
+        """
+        Recursively merge two dictionaries.
+        Values from `overrides` take precedence.
+        """
+        
+        if not isinstance(overrides, dict):
+            return overrides  # Base case: non-dict value, use overrides
+        
+        merged = copy.deepcopy(defaults)
+        for key, value in overrides.items():
+            if key in merged and isinstance(merged[key], dict):
+                merged[key] = self._recursive_merge(merged[key], value)
+            else:
+                merged[key] = value
+        return merged   
 
     def _validate_project_path(self):
         path = Path(self.project_path).resolve()
@@ -478,12 +446,14 @@ class MuleFlowAnalyzer:
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
         from src.sequence_diagram_generator import SequenceDiagramGenerator
-        mule_sequence_diagram_generator = SequenceDiagramGenerator()
+        mule_sequence_diagram_generator = SequenceDiagramGenerator(self.configuration_properties)
 
         for flow in flows:
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
-            legend_file = mule_sequence_diagram_generator.render_legend(mule_sequence_diagram_generator.arrow_legend, flow.attributes.get('name'))
+            
+            # Legend Rendering is likely to be out of scope
+            #legend_file = mule_sequence_diagram_generator.render_legend(mule_sequence_diagram_generator.arrow_legend, flow.attributes.get('name'))
             print(f"Generated {image_file}")
 
 
