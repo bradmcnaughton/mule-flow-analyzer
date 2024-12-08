@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ibm-mq="http://www.mulesoft.org/schema/mule/ibm-mq" xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq" xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/ibm-mq/current/mule-ibm-mq.xsd">
+	<sockets:listener-config name="Sockets_Listener_config" doc:name="Sockets Listener config" doc:id="d87da0d9-f6e0-4225-b4ce-24975285cca2" >
+		<sockets:tcp-listener-connection host="localhost" port="1123" >
+			<tls:context >
+				<tls:trust-store path="security/socket.jks" password="abc" type="jks" algorithm="WPA" />
+			</tls:context>
+		</sockets:tcp-listener-connection>
+	</sockets:listener-config>
+	<ee:object-store-caching-strategy name="Caching_Strategy" doc:name="Caching Strategy" doc:id="ddf5e20b-7db2-4757-8985-fe200949b08b" keyGenerationExpression="#[payload.id]" />
+	<flow name="control-flows-cache" doc:id="0a3e251b-8d97-4910-918e-9a1a19e9a7ce" >
+		<sockets:listener doc:name="WebSocket Listener" doc:id="6e824272-bde9-4319-916f-bde6bc1f3a43" config-ref="Sockets_Listener_config"/>
+		<tracing:set-logging-variable doc:name="Set logging variable" doc:id="04024873-c0ed-4515-8b27-01d7cc1b899b" variableName="mySocketStreamId" value="#[payload.id]"/>
+		<ee:cache doc:name="Cache by ID" doc:id="1ca99a3a-d9cc-49a8-9309-eb355184b2f7">
+			<java:invoke doc:name="Execute MyClass" doc:id="686da7c9-36ae-4e86-82f9-3cb417634a9c" class="my.class.name" instance="my" method="#[doThis()]"/>
+			<db:stored-procedure doc:name="Convert ID to Object" doc:id="996a5a81-a8c7-44ea-91cf-17876c40f284" config-ref="DB_B_Database_Config">
+				<db:sql ><![CDATA[myIdProc]]></db:sql>
+				<db:in-out-parameters >
+					<db:in-out-parameter key="id" value="#[payload.id]" />
+				</db:in-out-parameters>
+				<db:output-parameters >
+					<db:output-parameter key="0" type="STRUCT" />
+				</db:output-parameters>
+			</db:stored-procedure>
+			<ee:transform doc:name="Create Message" doc:id="2005e4d5-4749-4092-a990-9705a404c3bb" >
+				<ee:message >
+				</ee:message>
+				<ee:variables >
+					<ee:set-variable variableName="myMessage" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</ee:cache>
+		<ibm-mq:publish doc:name="Publish" doc:id="171c5f0c-eac5-4daa-a5ed-e8fbc8287b98" config-ref="IBM_MQ_Config" destination="idmessages">
+			<ibm-mq:message >
+				<ibm-mq:body ><![CDATA[#[vars.myMessage]]]></ibm-mq:body>
+			</ibm-mq:message>
+		</ibm-mq:publish>
+	</flow>
+</mule>

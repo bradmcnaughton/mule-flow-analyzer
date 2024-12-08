@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:spring="http://www.mulesoft.org/schema/mule/spring" xmlns:xml-module="http://www.mulesoft.org/schema/mule/xml-module"
+	xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:java="http://www.mulesoft.org/schema/mule/java" xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:workday="http://www.mulesoft.org/schema/mule/workday" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/workday http://www.mulesoft.org/schema/mule/workday/current/mule-workday.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/xml-module http://www.mulesoft.org/schema/mule/xml-module/current/mule-xml-module.xsd
+http://www.mulesoft.org/schema/mule/spring http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd">
+	<workday:config name="Workday_Config" doc:name="Workday Config" doc:id="a4346540-33cd-4932-b37b-1048457bde5b" >
+		<workday:basic-authentication-api-connection password="mypassword" tenantName="sdfgxdgsdfgsdfg0sdgusdgs0d9ugs09sgd" userName="sdgsdfg9s0dg089sgd0dsg" >
+			<tls:context >
+				<tls:trust-store path="trust.jks" password="pass" type="jks" />
+			</tls:context>
+		</workday:basic-authentication-api-connection>
+	</workday:config>
+	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="6d54fb3a-af55-4bc8-8816-d5602222e7e7" >
+		<salesforce:basic-connection username="bb" password="bb" securityToken="assas" connectionTimeout="60" />
+	</salesforce:sfdc-config>
+	<salesforce:sfdc-config name="Experience_Cloud_Salesforce_Config" doc:name="Salesforce Config" doc:id="1691bcd3-d186-4bfa-b7f0-c7a24fc56dd6" >
+		<salesforce:basic-connection username="asfas" password="asfa" />
+	</salesforce:sfdc-config>
+	<flow name="custom-data-sourcesFlow" doc:id="721d6b08-08b5-4211-b989-30991a090131" >
+		<scheduler doc:name="Scheduler" doc:id="953eaa61-4ccf-4ce4-92f9-ed5bd489f783" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="60" startDelay="60" timeUnit="MINUTES"/>
+			</scheduling-strategy>
+		</scheduler>
+		<workday:absence-management operation="create" doc:name="Get Absences" doc:id="47f00879-aa5e-4739-8f8f-be542af01928" config-ref="Workday_Config"/>
+		<ee:transform doc:name="Map Payload" doc:id="c553eb59-826c-4f48-bc30-714c8b134d03" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:create-batch doc:name="Absence Events" doc:id="d816ad28-670a-4496-8bf6-1d2d32e42018" config-ref="Salesforce_Config">
+			<salesforce:job-info-batch />
+		</salesforce:create-batch>
+		<salesforce:create-job operation="update" type="stuff" doc:name="Process Batch" doc:id="d8826e31-20d6-4e8d-bb82-4f0abe2945ab" config-ref="Salesforce_Config"/>
+		<salesforce:push-generic-event doc:name="Update Different Salesforce Cloud" doc:id="c5c07c59-8b4a-4f16-9459-e0df6c8fe736" config-ref="Experience_Cloud_Salesforce_Config" channelId="asfas"/>
+	</flow>
+	<!-- [STUDIO:"custom-data-sourcesFlow1"]<flow name="custom-data-sourcesFlow1" doc:id="4a9aa743-ffaf-4f7e-b74b-2d8c5a3c3815" >
+		<batch:job jobName="custom-data-sourcesBatch_Job" doc:id="458d74c5-9d83-40ef-82fa-5999ae140521" >
+			<batch:process-records >
+				<batch:step name="Batch_Step" doc:id="9fdc0d04-777d-4107-880b-323c4c6307c6" >
+					<batch:job jobName="custom-data-sourcesBatch_Job1" doc:id="66666eb8-bf2e-4871-850d-f841f45fe25e" >
+						<batch:process-records >
+							<batch:step name="Batch_Step1" doc:id="7576283d-975d-4e47-824d-6c45aad48ec3" />
+						</batch:process-records>
+					</batch:job>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="4fc188dd-c896-4dea-9d4b-b426fa4475e3" />
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<tracking:custom-event doc:name="Custom Business Event" doc:id="0e3ac431-e2c0-4f23-89c3-f84e7499f997" />
+			</batch:on-complete>
+		</batch:job>
+		<ee:dynamic-evaluate doc:name="Dynamic Evaluate" doc:id="d499450b-b7c4-47cc-8149-03f85279df86" />
+		<idempotent-message-validator doc:name="Idempotent Message Validator" doc:id="ac35ac95-8d76-407c-b0cc-43c10e61cdca" />
+		<ee:invalidate-cache doc:name="Invalidate Cache" doc:id="c84ee044-8afa-47c5-861c-f5cec7acaf83" />
+		<ee:invalidate-key doc:name="Invalidate Key" doc:id="73579929-306e-4716-8992-3c3077805c7c" />
+		<logger level="INFO" doc:name="Logger" doc:id="e2c91ee1-d062-444f-8ff1-d91e49f197db" />
+		<parse-template doc:name="Parse Template" doc:id="d771dd15-5bb1-4398-b69d-b64a1aeb638d" />
+		<tracking:transaction doc:name="Set Transaction Id" doc:id="2b7f337a-91c0-4d69-9618-8cbe2f51dab6" />
+		<ee:transform doc:name="Transform Message" doc:id="4ec873dd-ea97-453c-b14c-ab0642442a67" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+&#45;&#45;-
+{
+}&#93;&#93;></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<async doc:name="Async" doc:id="2d98e086-800c-40b8-a49b-6b923ea2cc05" >
+			<ee:cache doc:name="Cache" doc:id="158245aa-5fd7-4b07-b8a2-bd0b75338a08" >
+				<try doc:name="Try" doc:id="3fe46b73-47c7-44fb-9e94-3b820a95a026" >
+					<until-successful maxRetries="5" doc:name="Until Successful" doc:id="99cfffd7-7879-436b-89fc-f1a27fae8738" >
+						<remove-variable doc:name="Remove Variable" doc:id="d2808fda-c1e5-4e78-9f26-939e9c383735" />
+						<set-payload value="#[payload&#93;" doc:name="Set Payload" doc:id="f934dd06-543f-4240-bd57-75c3301856da" />
+						<set-variable value="" doc:name="Set Variable" doc:id="f77844c1-3364-4902-92a5-14899b7092c6" />
+						<tracing:clear-logging-variables doc:name="Clear logging variables" doc:id="0f79c566-9e2a-4330-867e-9f6c186657a4" />
+						<tracing:remove-logging-variable doc:name="Remove logging variable" doc:id="cc8619df-fdbe-4c07-a07c-c54cc752cf21" />
+						<validation:is-ip doc:name="Is IP" doc:id="3c23ec46-2592-4325-9fc1-5b1a3d8558c6" />
+						<java:invoke doc:name="Invoke" doc:id="76d4c8bc-53f4-4349-8f4e-7a4173df23d1" />
+						<java:new doc:name="New" doc:id="220dedd2-9eff-4c71-823a-8c5e1aa14af4" />
+						<os:contains doc:name="Contains" doc:id="103e0330-2c90-4947-84fc-4cf4dea6e06f" />
+						<os:retrieve-all doc:name="Retrieve all" doc:id="c324e302-ed4a-481e-ac31-f6c00fe45911" />
+						<scripting:execute doc:name="Execute" doc:id="380694b6-e3eb-4540-8038-a19e49b1a589" />
+						<xml-module:validate-schema doc:name="Validate schema" doc:id="a7dbf8b0-b361-406f-a7b9-4f4cb48c9a90" />
+						<spring:authorization-filter doc:name="Authorization filter" doc:id="c909eed5-308a-43a9-ae6c-dce51b23ead2" />
+					</until-successful>
+				</try>
+			</ee:cache>
+		</async>
+	</flow> [STUDIO] -->
+</mule>

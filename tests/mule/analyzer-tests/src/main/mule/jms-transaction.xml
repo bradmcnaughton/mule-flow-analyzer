@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ibm-mq="http://www.mulesoft.org/schema/mule/ibm-mq" xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/ibm-mq/current/mule-ibm-mq.xsd">
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="b82e4807-0591-468c-8d09-45aeff6ffeab" >
+		<jms:active-mq-connection >
+			<jms:factory-configuration />
+		</jms:active-mq-connection>
+	</jms:config>
+	<email:smtp-config name="Email_SMTP" doc:name="Email SMTP" doc:id="a926b439-4c65-40b1-8338-6c2743b255dd" >
+		<email:smtp-connection host="localhost" />
+	</email:smtp-config>
+	<db:config name="DB_A_Database_Config" doc:name="Database Config" doc:id="013983f1-af6d-4827-b4e2-e1f12199bf8b" >
+		<db:data-source-connection dataSourceRef="a" />
+	</db:config>
+	<db:config name="DB_B_Database_Config" doc:name="Database Config" doc:id="3fa59a53-8ef8-481d-8ce7-6658aefc0c76" >
+		<db:data-source-connection dataSourceRef="b" />
+	</db:config>
+	<anypoint-mq:config name="Anypoint_MQ_Config" doc:name="Anypoint MQ Config" doc:id="70b8824f-c52e-4172-b3c6-e62321df7a0f" >
+		<anypoint-mq:connection clientId="123" clientSecret="123" />
+	</anypoint-mq:config>
+	<ibm-mq:config name="IBM_MQ_Config" doc:name="IBM MQ Config" doc:id="df4e4176-98cc-4a44-a0b2-22a57fec8dd1" >
+		<ibm-mq:connection >
+			<ibm-mq:connection-mode >
+				<ibm-mq:binding queueManager="myq" />
+			</ibm-mq:connection-mode>
+		</ibm-mq:connection>
+	</ibm-mq:config>
+	<vm:config name="BradsVm_queue_config" doc:name="VM Config" doc:id="29b5a336-1360-4682-98fc-9abe35f7ce90">
+		<vm:queues >
+			<vm:queue queueName="some-vm-queue" />
+			<vm:queue queueName="some-vm-queue2" />
+		</vm:queues>
+	</vm:config>
+	<flow name="jms-transactionFlow" doc:id="5b209451-1183-400c-97e1-5e46f79e44b4" >
+		<jms:listener doc:name="my-queue-name" doc:id="c430f4d5-5293-442b-8f7c-578899685635" config-ref="JMS_Config" destination="my-queue-name" transactionalAction="ALWAYS_BEGIN" transactionType="XA"/>
+		<ee:transform doc:name="Set Var 1" doc:id="37cfa558-f0b9-475b-86ed-063d3264334e" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="var1" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:insert doc:name="Insert var1 into db1" doc:id="2eee9995-c248-4832-81a8-32241b55a7eb" transactionalAction="ALWAYS_JOIN" config-ref="DB_A_Database_Config">
+			<db:sql><![CDATA[SELECT * FROM DUAL]]></db:sql>
+		</db:insert>
+		<ee:transform doc:name="Set Var 2" doc:id="2691a879-ca46-4494-a85e-8d2953450037" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="var2" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<db:insert doc:name="Insert var2 into db2" doc:id="80314cbb-00d8-4f3c-947f-676398f3c9c2" transactionalAction="ALWAYS_JOIN" config-ref="DB_B_Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM DUAL]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{"one": "abc", "bob": "xyz"}]]]></db:input-parameters>
+		</db:insert>
+		<logger level="INFO" doc:name="All Done" doc:id="919d5888-4b49-4694-9195-4c8a5a6adefa" message="All Done"/>
+		<error-handler ref="jms-transaction-custom-error-handler" />
+	</flow>
+	<error-handler name="jms-transaction-custom-error-handler" doc:id="f3942081-eb36-4bb0-a67c-d670f20f5992" >
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="607390f5-151f-4e70-b6bd-7650d3cadd4d" type="EXPRESSION">
+			<email:send doc:name="Send Support Email" doc:id="ff4383c4-3fdb-4af9-972c-62668f78f17f" toAddresses="support@fake.net" config-ref="Email_SMTP"/>
+		</on-error-propagate>
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="2fbefaba-ff14-461d-8777-f8a3e0ced3e2" type="STREAM_MAXIMUM_SIZE_EXCEEDED">
+			<logger level="INFO" doc:name="No Dramas" doc:id="359e340a-b0af-47da-be90-555825face40" message="No Dramas"/>
+		</on-error-continue>
+	</error-handler>
+	<flow name="ibm-mq-queues" doc:id="28d37cee-72cc-4b7c-9cb3-a5009566905f" >
+		<ibm-mq:listener doc:name="On New Message" doc:id="0c7becd0-bfce-466a-b274-334ed39ad348" config-ref="IBM_MQ_Config" destination="my-ibm-queue"/>
+		<ibm-mq:ack doc:name="Ack" doc:id="3eed7bad-c039-4459-9757-0ebc8fefd7b3" ackId="123"/>
+		<ibm-mq:publish-consume doc:name="Publish consume" doc:id="4ec4a78d-9ebc-4ede-897b-dca09ed9d70a" config-ref="IBM_MQ_Config" destination="ibm-destination-2"/>
+	</flow>
+	<flow name="vm-queues-queues" doc:id="8b9f137b-f2a1-4f50-abb0-3f52d21ddde5" >
+		<vm:listener doc:name="Listener" doc:id="a617e171-49c3-4e93-b2e4-1e677e5517fa" config-ref="BradsVm_queue_config" queueName="my-vm-queue"/>
+		<vm:publish-consume doc:name="Publish consume" doc:id="db7180ff-d89c-4bda-bab9-4b7614027cff" config-ref="BradsVm_queue_config" queueName="some-vm-queue"/>
+		<vm:consume doc:name="Consume" doc:id="53a66aa5-1770-4a55-905f-c42a3c4e6d7c" config-ref="BradsVm_queue_config" queueName="some-vm-queue2"/>
+		<vm:publish doc:name="Publish" doc:id="1ed67bf6-3140-426f-968f-afa1c9bd76f4" config-ref="BradsVm_queue_config" queueName="some-vm-queue2"/>
+	</flow>
+	<flow name="anypoint-mq-queues" doc:id="35738a04-27d1-43a4-8e48-4795767a3bcd" >
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="7243d9d8-4742-44ea-bfcc-889ab408a7af" config-ref="Anypoint_MQ_Config" destination="my-test-subscription"/>
+		<anypoint-mq:consume doc:name="Consume" doc:id="02df7673-00fa-4f23-9ae2-c942aba2b011" config-ref="Anypoint_MQ_Config" destination="my-test-queue"/>
+		<anypoint-mq:publish doc:name="Publish" doc:id="f2287bd8-9370-42ba-9dff-fd5f540dd378" config-ref="Anypoint_MQ_Config" destination="my-destination"/>
+	</flow>
+</mule>

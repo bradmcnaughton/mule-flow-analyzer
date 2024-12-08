@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ibm-mq="http://www.mulesoft.org/schema/mule/ibm-mq" xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq" xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd
+http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/ibm-mq/current/mule-ibm-mq.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="22c8a6bb-01a5-4314-91ae-7ab15246335b" basePath="/" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<http:request-config name="stereo_config" doc:name="Stereo HTTP Request configuration" doc:id="b68cecc9-6e74-489f-acb4-fe3d3872f7de" >
+		<http:request-connection host="192.168.0.200" />
+	</http:request-config>
+	<http:request-config name="fridge_config" doc:name="Fridge HTTP Request configuration" doc:id="327257bd-eb51-4d7f-bffe-6744475e47ab" >
+		<http:request-connection host="192.168.0.201" />
+	</http:request-config>
+	<validation:config name="Validation_Config" doc:name="Validation Config" doc:id="4fd8d113-52eb-45c6-a2ef-ffe100c5141a" />
+	<file:config name="Local_File_Config" doc:name="File Config" doc:id="b1b6980d-bc9f-4973-82ce-15ecfc82d523" />
+	<flow name="control-flows-single-choice" doc:id="d67f09dd-e830-48f7-867b-124f7b8bdd19" >
+		<http:listener doc:name="Ice Cube Listener" doc:id="cf0072fb-d844-4e9b-b51a-c2ba41d72ccc" path="/api" config-ref="HTTP_Listener_config"/>
+		<set-variable value="#[payload.dayType]" doc:name="goodDay" doc:id="48890beb-3bc5-48e9-a439-1abb8d3f2cba" variableName="goodDay"/>
+		<choice doc:name="Is a Good Day?" doc:id="02bb9225-a52f-4d75-a074-7ff625147c36" >
+			<when expression="#[vars.goodDay == 'YES']">
+				<ee:transform doc:name="Set Payload" doc:id="e73fb5b6-e265-43e2-bb57-7b8672f67cfd" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"today": "was a good day"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<http:request method="GET" doc:name="Stereo API" doc:id="d3e15b17-7277-4bd3-84cb-624967db7802" path="/tunes" config-ref="stereo_config"/>
+			</when>
+			<when expression="#[vars.goodDay == 'NO']">
+				<ee:transform doc:name="Set Payload" doc:id="2c444a77-fe22-46cc-bafb-41a29e1191b1" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"today": "was a bad day"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<http:request method="DELETE" doc:name="Stereo API" doc:id="64d3e333-4c9a-43fc-af81-1e3639583856" path="/tunes" config-ref="stereo_config"/>
+			</when>
+			<when expression="#[vars.goodDay == 'MAYBE']">
+				<ee:transform doc:name="Set Payload (Maybe Baby)" doc:id="f7ccef89-40b6-48ab-8c6c-18010eb0b2aa" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"today": "was a day bay"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<http:request method="PATCH" doc:name="Fridge API" doc:id="b3f6cf99-fd98-4143-bec5-3376c6f55333" path="/pizza" config-ref="fridge_config"/>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="98871db4-39df-4950-ae7f-c5797a5e0437" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"today": "unclassified"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<raise-error doc:name="Raise Time is a Flat Circle" doc:id="20d2aaee-aff2-4795-a955-e8f304fd2d8d" type="ANY"/>
+			</otherwise>
+		</choice>
+		<error-handler  >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="d4433b46-20ad-461f-bf9d-0de69935fd69" >
+				<logger level="INFO" doc:name="Logger" doc:id="a50ac215-314c-46cf-b0c9-f2f6b5c0d036" message="LOCAL ERROR HANDLED"/>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="control-flows-loops" doc:id="e805d459-fa94-48ba-b845-9516f370ee04" >
+		<http:listener doc:name="Listener" doc:id="93669ba0-b388-4351-b321-246215a18603" path="/loops"/>
+		<validation:validate-size doc:name="Validate Payload Size" doc:id="dc075660-27a1-4745-b7e9-d41d903f32f5" value="payload" min="2" message="Payload Should be an array"/>
+		<foreach doc:name="For Each Payload Item" doc:id="6710e5a0-8b34-47f2-a8b1-70b76c80fb73" collection="payload">
+			<logger level="INFO" doc:name="Log Payload" doc:id="70bf41e2-74a6-4551-a5b4-bc5cbb1f2693" message="payload"/>
+			<file:write doc:name="Write Payload to File" doc:id="785965c9-db26-4ea7-aab9-d9e9f9fdd091" path="#['/tmp/' ++ payload.name ++ '.txt']"/>
+			<foreach doc:name="For Each Name in Payload Names" doc:id="1f61228b-44b3-4a99-9f1a-3fc6674919b5" collection="payload.names">
+				<jms:publish doc:name="Publish Name to Names Queue" doc:id="eb1b4195-2c6a-42ff-a5b8-a4a2fa13dbfd" config-ref="JMS_Config" destination="names"/>
+			</foreach>
+			<logger level="INFO" doc:name="Finished Loop #" doc:id="c31790ff-7da6-4c82-9529-1ee2cdaa6982" message='#["Finished Loop " ++ vars.counter]'/>
+		</foreach>
+	</flow>
+	<flow name="control-flows-until-successful" doc:id="e1d29488-666a-4c7c-98c6-8753cf3ddae9" >
+		<sftp:listener doc:name="New Cattle Transcript Uploaded" doc:id="3884ec90-0b72-42e2-9561-596d3432b4c3" config-ref="LocalFileServer_SFTP_Config" directory="/cattle" watermarkEnabled="true" moveToDirectory="/archive">
+			<redelivery-policy maxRedeliveryCount="2" />
+			<scheduling-strategy >
+				<fixed-frequency frequency="10" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</sftp:listener>
+		<logger level="INFO" doc:name="Got Cattle File" doc:id="59ab9912-a15a-4d68-843c-48894ce51c85" message="Got Cattle File"/>
+		<try doc:name="Try Getting Tunes" doc:id="f9436e26-140a-4a4a-bd88-9cd195739e5e" >
+			<try doc:name="Try Creating Request Arguments" doc:id="04963b40-dab9-4e21-8009-b2e16f4757e4" >
+				<ee:transform doc:name="Create requestBody" doc:id="113fea53-1e66-4a50-ac90-edc6f397073d" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="requestBody" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<error-handler >
+					<on-error-propagate enableNotifications="true" logException="true" doc:name="Expression Error" doc:id="8eb34130-696d-4432-835b-efb22e73ea3e" type="EXPRESSION">
+						<logger level="INFO" doc:name="Failed to Create Cattle Musical Preferences" doc:id="0d6327e0-61a8-40a2-93de-7cf20f043409" message="Failed to Create Cattle Musical Preferences"/>
+					</on-error-propagate>
+					<on-error-propagate enableNotifications="true" logException="true" doc:name="Any Error" doc:id="aedc69c8-7fee-43bb-8f64-7a5ee8a82c29" type="ANY">
+						<db:insert doc:name="Insert Audit Log" doc:id="88769e65-5e79-429b-a6dd-0ddca7c0edda" config-ref="DB_A_Database_Config">
+							<db:sql ><![CDATA[insert 1 into Dual]]></db:sql>
+						</db:insert>
+					</on-error-propagate>
+				</error-handler>
+			</try>
+			<until-successful maxRetries="${cow.tunes.retries}" doc:name="Until Successful" doc:id="e735ee42-8208-4b32-ad1f-8019d66dadc6" millisBetweenRetries="70000">
+			<http:request method="GET" doc:name="GET Cow Tunes" doc:id="65f73b71-0d1d-4ad6-8f68-1a862f42b1ef" path="/tunes">
+				<http:query-params><![CDATA[#[output application/java
+---
+{
+	"station" : "MooFM"
+}]]]></http:query-params>
+				<http:response-validator>
+					<http:success-status-code-validator values="200..202"/>
+				</http:response-validator>
+			</http:request>
+		</until-successful>
+		
+		
+		<error-handler >
+<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue for Connectivity Faliures" doc:id="4ec02d2f-a776-4cf6-9483-a5b2166ca04e" when='#[error.errorType.identifier != "CONNECTIVITY"]' >
+<logger level="INFO" doc:name="Logger" doc:id="fb985b6a-520d-414f-a274-6c049a7c454a" message="Not retrying since not a connectivity failure with error #[error.description] with correlation id #[correlationId]" />
+<ee:transform doc:name="Create Error Variable" doc:id="1bd21a97-a69a-4c18-a0cd-cb58667593dc" >
+<ee:message />
+<ee:variables >
+<ee:set-variable variableName="error_object" ><![CDATA[%dw 2.0
+output application/java
+---
+error]]></ee:set-variable>
+</ee:variables>
+</ee:transform>
+</on-error-continue>
+</error-handler>
+		
+		
+		</try>
+		<ee:transform doc:name="Create Mixtape" doc:id="f397b35f-47d1-4a4c-bfbd-e246f7bc9eee" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="mixtape" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<until-successful maxRetries="99999" doc:name="Never Give Up" doc:id="c76b0d30-5d3b-49a5-8f9b-452303db4bc2" >
+			<anypoint-mq:publish doc:name="Publish Tracklist to Queue" doc:id="1c176733-8549-48e6-a40f-c41084f40dd1" config-ref="Anypoint_MQ_Config" destination="roadtrip">
+			<anypoint-mq:body><![CDATA[#[vars.mixtape]]]></anypoint-mq:body>
+		</anypoint-mq:publish>
+		</until-successful>
+	</flow>
+</mule>

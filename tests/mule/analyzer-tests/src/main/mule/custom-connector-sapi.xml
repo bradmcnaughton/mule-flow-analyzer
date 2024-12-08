@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq" xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:some-customers-sapi="http://www.mulesoft.org/schema/mule/some-customers-sapi" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/some-customers-sapi http://www.mulesoft.org/schema/mule/some-customers-sapi/current/mule-some-customers-sapi.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd">
+	<some-customers-sapi:config name="Some_customers_sapi_Config" doc:name="Some-customers-sapi Config" doc:id="3a83eaab-8cbd-4d51-a30c-8a6b995c556f" property_host="localhost" property_port="12345" property_protocol="HTTPS" property_client-id="123" property_client-secret="456" />
+	<flow name="custom-connector-customers-sapi" doc:id="eb447c75-3c1f-4c44-a381-c5b597660705" >
+		<http:listener doc:name="Listener" doc:id="9e8fb29f-82c9-423e-b8bc-502f49a14ca5" config-ref="HTTP_Listener_config" path="/customers/grpc"/>
+		<ee:transform doc:name="Set Payload for Random Customer" doc:id="d47d5b48-95e3-48e6-9092-2ffcd674ef03" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<some-customers-sapi:create-customer doc:name="Generate New Customer" doc:id="67cc574d-49be-4b27-9dea-7f62fccdc5de" config-ref="Some_customers_sapi_Config" doc:description="The random customer is important!" active="true"/>
+		<validation:is-ip doc:name="firstName is IP Address" doc:id="f8697f50-a45d-4f3f-a516-6251d1ef36c7" config-ref="Validation_Config" ip="#[payload.firstName]" message="firstName should be a valid IP4 or IP6 address."/>
+		<some-customers-sapi:get-customers-list doc:name="Get All Customers" doc:id="60786fb4-f459-453b-b692-4f9fa5c45341" config-ref="Some_customers_sapi_Config"/>
+		<anypoint-mq:publish doc:name="Publish" doc:id="5e67169c-da9a-48e3-a0b6-6cb3b9f73077" doc:description="Put em all in the queue. Even the &quot;inactive&quot; ones!&#10;&#10;Oh, and something else: I'm Great! Nice to meet you?" config-ref="Anypoint_MQ_Config" destination="customers"/>
+		<error-handler ref="jms-transaction-custom-error-handler" />
+	</flow>
+</mule>

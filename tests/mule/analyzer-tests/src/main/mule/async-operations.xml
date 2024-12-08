@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd">
+	<flow name="async-operation" doc:id="165e2429-9bbc-433c-afb7-c188aeb1815a" >
+		<salesforce:subscribe-channel-listener doc:name="Subscribe channel listener" doc:id="dd60d0cb-beee-4d8b-bde7-cb97b459cbbf" config-ref="Experience_Cloud_Salesforce_Config" streamingChannel="abc"/>
+		<logger level="INFO" doc:name="Got Subscription" doc:id="cbbc5f5b-631d-46d6-91b6-dd1e7276ecc8" message="Got Subscription #[payload.id]"/>
+		<db:insert doc:name="Insert Subscription" doc:id="85a81df2-b141-4f42-9954-275558b87ee5" config-ref="DB_A_Database_Config">
+			<db:sql ><![CDATA[INSERT INTO subscriptions VALUES abc=:myVar]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{'myVar': payload.id}]]]></db:input-parameters>
+		</db:insert>
+		<set-variable value="#[payload.id]" doc:name="customerId" doc:id="c151c904-d88b-4d4c-8479-b3beafc96cd0" variableName="customerId"/>
+		<async doc:name="Async" doc:id="c2cd5e02-1c0b-4914-8351-5e204cf5e356" >
+			<logger level="INFO" doc:name="Async Email Send" doc:id="0b05bc92-6010-4d12-a07f-e391895f7720" message="Async Email Send"/>
+			<flow-ref doc:name="new-subscription-email" doc:id="ea2dd013-9367-45b7-9f61-cccfacb94e1c" name="new-subscription-email"/>
+		</async>
+		<salesforce:delete doc:name="Delete Subscription" doc:id="1a38612a-2d31-4ae5-a24e-d8e094626041" config-ref="Experience_Cloud_Salesforce_Config"/>
+	</flow>
+	<sub-flow name="new-subscription-email" doc:id="06fdd155-d0be-4d46-91e8-3f53b86bb069">
+		<email:send doc:name="New Subscription Email" doc:id="81793a92-9c06-4249-b22b-9f86809b24b9" config-ref="Email_SMTP" toAddresses="abc" />
+		<db:update doc:name="Update Subscription Emails" doc:id="8c275858-02b9-400e-80ea-c192db362b10" config-ref="DB_A_Database_Config">
+			<db:sql><![CDATA[UPDATE customers SET email_sent=1 where customer_id = :customerId]]></db:sql>
+			<db:input-parameters><![CDATA[#[{'customerId': vars.customerId}]]]></db:input-parameters>
+		</db:update>
+	</sub-flow>
+</mule>

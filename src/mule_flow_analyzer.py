@@ -7,7 +7,9 @@ from typing import Dict, NewType
 import yaml
 import re
 import copy
+import logging
 
+logger = logging.getLogger(__name__)
 from src.mule_flow_element import MuleFlowElement
 
 # Type for the Property Files Hierarchy
@@ -308,7 +310,7 @@ class MuleFlowAnalyzer:
 
         # Process all flows in the file
         if len(flows) > 0:
-            print(f"Processing {xml_file}")
+            logger.debug(f"Processing {xml_file}")
             for flow in flows:
                 # Initial Depth of 1
                 depth = 0
@@ -403,7 +405,6 @@ class MuleFlowAnalyzer:
             full_tag = match.group(0)
             tag_name = match.group(1)
             attributes = match.group(2)
-            #print(f"OLD TAG: {full_tag}")
             
             if attributes:
                 # Process attributes
@@ -412,7 +413,6 @@ class MuleFlowAnalyzer:
                                     attributes)
             
             # Reconstruct the tag with processed attributes
-            #print(f"NEW TAG: <{tag_name}{attributes}>")
             return f"<{tag_name}{attributes}>"
 
         # Replace placeholders in tag attributes
@@ -441,7 +441,6 @@ class MuleFlowAnalyzer:
                 self.generate_sequence_diagram(xml_file, flow_name)
 
     def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
-        
         mule_flow_element = self.project_files[xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
@@ -452,8 +451,6 @@ class MuleFlowAnalyzer:
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
             
-            # Legend Rendering is likely to be out of scope
-            #legend_file = mule_sequence_diagram_generator.render_legend(mule_sequence_diagram_generator.arrow_legend, flow.attributes.get('name'))
+            # Keep print for user feedback and add debug logging
+            logger.debug(f"Generated diagram: {image_file}")
             print(f"Generated {image_file}")
-
-

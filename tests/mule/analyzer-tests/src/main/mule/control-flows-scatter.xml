@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="control-flows-scatterFlow" doc:id="8c047982-5f99-4d0e-b592-1578692281cc" >
+		<http:listener doc:name="Treasure Listener" doc:id="385c48db-1738-425f-ba8d-dc5e1179d736" config-ref="HTTP_Listener_config" path="/treasure"/>
+		<set-variable value="#[payload.coordinates]" doc:name="Map Coordinates" doc:id="98dab7ff-6e54-41a0-b35f-080c8257f647" variableName="coordinates"/>
+		<scatter-gather doc:name="Visit Coordinates" doc:id="8e962101-398e-4d39-a539-431bc0419c33" timeout="30000" target="booty" maxConcurrency="5">
+			<route >
+				<logger level="INFO" doc:name="To Tatooga" doc:id="55c27e60-d831-4ad6-be6c-17a777a3c576" message="To Tatooga"/>
+				<http:request method="GET" doc:name="Request Tatooga Payload" doc:id="e4cdacb9-37e4-4c21-878c-031c924bc464" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body ><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"island-name" : "tagoga"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="To Bermuda" doc:id="491cdb79-ac76-4b3f-a15a-c09234d9dcd6" message="To Tatooga"/>
+				<http:request method="GET" doc:name="Request Bermuda Payload" doc:id="eba30971-6c8e-416d-be5c-07b92eb3a7f4" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body ><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"island-name" : "bermuda"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="To Aruba" doc:id="3a582f2a-e40f-4b28-bd64-d0f4ee91ecb8" message="To Tatooga"/>
+				<http:request method="GET" doc:name="Request Aruba Payload" doc:id="14cde29f-6065-4a22-9fa1-2949d89a864b" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body ><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"island-name" : "aruba"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+		</scatter-gather>
+		<ee:transform doc:name="Set Shanty and Loot" doc:id="43ac05e8-d5b2-48f0-8616-84a7a300eca7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"song": "Sail Away",
+	"booty": vars.booty map ((item, index) -> ("chest" ++ index): item)
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<first-successful doc:name="Parallel Logging Competition" doc:id="9ba5e665-1518-4401-8bc4-247f48a5e54b" >
+			<route >
+				<logger level="INFO" doc:name="First Success" doc:id="6a4a54e6-430f-45ca-adce-166565302c84" message="First Success"/>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="Second Success" doc:id="ff907ec5-8716-4b94-8e8c-856fb184a9cc" message="Second Success"/>
+			</route>
+		</first-successful>
+		<set-payload value="#[payload]" doc:name="Set Payload" doc:id="54a97492-eef0-4ed1-8a0c-669f8ec78faf" />
+		<parallel-foreach doc:name="Parallel For Each" doc:id="11d27ca5-fff5-4f10-a0f7-8d2404b4e309" collection="vars.booty">
+			<logger level="INFO" doc:name="Booty Value" doc:id="65069bed-808c-4a41-b0c2-a021c1bb4c60" message="Booty Value is LOTS" />
+		</parallel-foreach>
+	</flow>
+
+<flow name="control-flows-round-robin" doc:id="db24f177-b36d-4c52-b265-142ca9d15ce2" >
+		<http:listener doc:name="Treasure Listener" doc:id="5e62bf3c-94a7-453d-8b48-249b13c7086a" config-ref="HTTP_Listener_config" path="/treasure"/>
+		<set-variable value="#[payload.coordinates]" doc:name="Map Coordinates" doc:id="32164dfa-a652-407e-9388-f9c5721f8c11" variableName="coordinates"/>
+		<round-robin doc:name="Visit the Islands" doc:id="8c1c389b-4033-4c78-a691-c8efe5f61d0d" doc:description="Visit islands in order and return when treasure is replenished.">
+			<route >
+				<logger level="INFO" doc:name="To Tatooga" doc:id="6d908509-354c-45c2-a0f2-f256e22f5047" message="To Tatooga" />
+				<http:request method="GET" doc:name="Request Tatooga Payload" doc:id="fc631fb9-fcc9-45fc-a37a-3d5bddf22d89" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"island-name" : "tagoga"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="To Bermuda" doc:id="07ded4a3-70a4-4dd1-831b-008b73a0eeb5" message="To Tatooga"/>
+				<http:request method="GET" doc:name="Request Bermuda Payload" doc:id="540b5b65-844b-4f8b-aade-84744a40b916" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body ><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"island-name" : "bermuda"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+			<route >
+				<logger level="INFO" doc:name="To Aruba" doc:id="aabdd20f-2ac5-4f90-98a4-b93de2a10dea" message="To Tatooga"/>
+				<http:request method="GET" doc:name="Request Aruba Payload" doc:id="ab9aae27-5a9d-4680-8b36-f4d60eb1dfc3" config-ref="HTTP_Request_configuration" path="/islands/{island-name}">
+					<http:body ><![CDATA[#[{"xSpot": payload.coordinates}]]]></http:body>
+					<http:uri-params ><![CDATA[#[output application/java
+---
+{
+	"island-name" : "aruba"
+}]]]></http:uri-params>
+				</http:request>
+			</route>
+
+
+
+		</round-robin>
+
+		<ee:transform doc:name="Set Shanty and Loot" doc:id="d80d6f01-f8ff-4543-b47f-0b294c5e1765" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"song": "Sail Away",
+	"booty": vars.booty map ((item, index) -> ("chest" ++ index): item)
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+
+
+</mule>

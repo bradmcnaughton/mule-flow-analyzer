@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:workday="http://www.mulesoft.org/schema/mule/workday" xmlns:xml-module="http://www.mulesoft.org/schema/mule/xml-module"
+	xmlns:ibm-mq="http://www.mulesoft.org/schema/mule/ibm-mq"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/ibm-mq/current/mule-ibm-mq.xsd
+http://www.mulesoft.org/schema/mule/xml-module http://www.mulesoft.org/schema/mule/xml-module/current/mule-xml-module.xsd
+http://www.mulesoft.org/schema/mule/workday http://www.mulesoft.org/schema/mule/workday/current/mule-workday.xsd">
+	<xml-module:config name="XML_Config" doc:name="XML Config" doc:id="c9ca252a-2044-481c-acff-b98e30259018" />
+	<flow name="batch-job-flowFlow" doc:id="1c9a2234-b7aa-4e90-ae1b-73b59293588c" >
+		<sftp:listener doc:name="On New or Updated Ships Log File" doc:id="80fa29de-af90-41e2-9ff0-9691c8556065" config-ref="LocalFileServer_SFTP_Config" directory="/input" timeBetweenSizeCheck="1" timeBetweenSizeCheckUnit="HOURS">
+			<scheduling-strategy >
+				<fixed-frequency frequency="5000" />
+			</scheduling-strategy>
+		</sftp:listener>
+		<flow-ref doc:name="multi-purpose-subflow" doc:id="7c42c24b-130a-41b8-b8b4-c69476d2a4c3" name="multi-purpose-subflow"/>
+		<tracking:transaction doc:name="Set Transaction Id" doc:id="0f950ca6-20f6-48e6-a29a-20fedbcf9a57" id="123"/>
+		<batch:job jobName="MegaPirateBatchProcessor" doc:id="bdfc399e-3c5a-43e0-97b2-b32db85bbdc6" blockSize="10">
+			<batch:process-records >
+				<batch:step name="DetectTales" doc:id="2810fd0e-73f8-485f-b673-dd996417cbc3" acceptPolicy="ALL">
+					<flow-ref doc:name="multi-purpose-subflow" doc:id="6cafeaa7-fd18-48e4-b19f-da2bf7426410" name="multi-purpose-subflow"/>
+					<ee:transform doc:name="Transform to Pirate Data Model" doc:id="ff0a0aa1-b50c-42ae-8f83-8524f33a3e27" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator doc:name="Combine Transformed Records" doc:id="8345cbc0-374c-4d19-9e94-5c3afc1aba84" streaming="true">
+						<ee:transform doc:name="Recombobulate" doc:id="7af6c794-ded5-49d2-b9bd-321fd3caf042" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					</batch:aggregator>
+				</batch:step>
+				<batch:step name="RecordShanties" doc:id="882ba745-f2a4-4fba-8bbd-0479c0521a73" >
+					<db:insert doc:name="Insert Shanty" doc:id="9e347c30-e8b7-430f-ba7d-b2b59c997cfe" config-ref="DB_A_Database_Config">
+						<db:sql ><![CDATA[INSERT INTO shanties VALUES tune=:tune]]></db:sql>
+						<db:input-parameters ><![CDATA[#[{tune: payload.tuneName}]]]></db:input-parameters>
+					</db:insert>
+					<batch:aggregator doc:name="Business Events" doc:id="1665ffcc-d614-4afb-8a8e-fb8dc5528e35" size="10">
+						<tracking:custom-event doc:name="Custom Business Event" doc:id="2da00f02-4e7b-4c1e-bc16-4367b07fe958" event-name="new_shanties_created">
+						<tracking:meta-data key="shantyCount" value="10" />
+					</tracking:custom-event>
+					</batch:aggregator>
+				</batch:step>
+				<batch:step name="WalkPlanks" doc:id="a7856dc8-c679-4c40-8dfd-561a7ec1840f" acceptPolicy="ONLY_FAILURES">
+					<flow-ref doc:name="Flow Reference" doc:id="bb6c96f2-8dcf-4ede-b0fb-48cd71c39a50" name="multi-purpose-subflow" target="multi-purpose-subflow"/>
+					<ibm-mq:publish doc:name="Walk Plank" doc:id="fd4ce782-11ff-49fd-8c36-58081d104555" config-ref="IBM_MQ_Config" destination="shanty-errors"/>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<ee:transform doc:name="Create Report" doc:id="53d79e73-5cf4-46d4-8806-ce107caf46fc" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/xml
+---
+{
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</batch:on-complete>
+		</batch:job>
+		<xml-module:xquery-transform doc:name="Xquery transform report" doc:id="101219fb-4fd2-4ec2-9549-0df927fd96da" config-ref="XML_Config">
+			<xml-module:xquery ><![CDATA[a]]></xml-module:xquery>
+		</xml-module:xquery-transform>
+		<try doc:name="Try" doc:id="30c41bc1-2597-486e-b21e-2b45826db8f5" >
+			<workday:student-transfer-credit operation="credit" doc:name="Pay Shanty Writers" doc:id="f837c7d2-0528-44d9-b3b9-0b41324292bb" config-ref="Workday_Config" />
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="ba8ec2a8-0406-4a43-b496-deb1c0d2f6ec" >
+					<logger level="INFO" doc:name="Business Error" doc:id="ab878d4b-4b89-40db-a5cc-8560d4569502" message="Business Error"/>
+					<raise-error doc:name="Raise error" doc:id="e695d190-b757-4a71-9b1c-875c547f2cd3" type="CUSTOM:SHANTY_PAYMENT" description="Error paying students for shanties"/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<error-handler ref="jms-transaction-custom-error-handler" />
+	</flow>
+	<sub-flow name="multi-purpose-subflow" doc:id="1c470001-2b2d-4568-8702-9755b4408d30" >
+		<logger level="INFO" doc:name="Log Item" doc:id="4292ce74-ecf3-4fbe-a355-22b0821544b7" message="payload" />
+	</sub-flow>
+</mule>

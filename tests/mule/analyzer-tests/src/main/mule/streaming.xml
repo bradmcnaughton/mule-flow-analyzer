@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<flow name="streamingFlow" doc:id="b12345e8-3ee9-48a9-8722-985a77c21b59" >
+		<sftp:listener doc:name="On New or Updated File" doc:id="3ded02ac-8524-43c4-bbe7-1e8486d97d44" config-ref="LocalFileServer_SFTP_Config">
+			<repeatable-in-memory-stream />
+			<scheduling-strategy >
+				<fixed-frequency />
+			</scheduling-strategy>
+		</sftp:listener>
+		<ee:transform doc:name="Stream and Transform Payload" doc:id="e37a28a1-954f-445d-ac3e-5a1d7fd1a4b3" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<http:request method="GET" doc:name="Request" doc:id="1614623d-fbc5-4738-b6f9-9aeac2f2f5b9" config-ref="stereo_config" path="/stream">
+			<repeatable-in-memory-stream />
+		</http:request>
+	</flow>
+</mule>

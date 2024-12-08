@@ -1,0 +1,20 @@
+flow [analyzer-test1-nested-flowrefs]
+  transform [Set Variable: myMainVar1]
+    variables
+      set-variable
+  sub-flow [set-mySubflowVar-subflow]
+    transform [Set Variable: mySubflowVar]
+      variables
+        set-variable
+  transform [Set Variable: myMainVar2]
+    variables
+      set-variable
+  sub-flow [set-mySubflowVar2-subflow]
+    transform [Set Variable: mySubflowVar2]
+      variables
+        set-variable
+    sub-flow [read-file-subflow]
+      read [Read File for Payload]
+    set-payload [Set Payload]
+    
+-> transform

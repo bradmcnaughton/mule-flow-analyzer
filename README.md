@@ -98,7 +98,7 @@ diagram_formatting_properties:
     notes: true # Include any documentation tag values as a Note on the actor
 
   mule:
-    box-color: "LightGreen-4CAF50" # Change Mule box gradient colors
+    box-color: "LightGreen-4CAF50" # Change Mule box color(s)
 
   arrows:
     # Override any of the arrow styles following PlantUML styling
@@ -142,13 +142,15 @@ diagram_formatting_properties:
 
   async:
     # Formatting for Async functionality
-    note: true # Include a note indicating an async scope
+    note: true # Include a note indicating an async scope is starting
     group: true # Wrap the async processing in a UML group
-    background-color: "yellow" # Give the async scope a background color
+    background-color: "yellow" # Specify the async scope's background color
 
   batch:
     # Formatting for Batch Processing scopes
     # Enable "groups" for whatever aspects of the batch process need to be made prominent
+    # For example, if only one step, grouping steps can be disabled
+    # If Aggregator is not used, the aggregator grouping can be disabled
     step:
       background-color: "purple"
       group: true

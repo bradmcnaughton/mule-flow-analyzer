@@ -1,8 +1,28 @@
 import argparse
 import os
 import yaml
+import logging
 from src.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
+from default_properties import DEFAULT_PROPERTIES
 
+# Get logging configuration from default properties
+log_config = DEFAULT_PROPERTIES['analyzer_properties']['logging']
+log_level = getattr(logging, log_config['level'].upper())
+log_file = log_config['file']
+
+# Create output directory for logs if it doesn't exist
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+# Configure logging with settings from default_properties
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # This will maintain console output
+    ]
+)
+logger = logging.getLogger(__name__)
 
 def load_user_config(file_path):
     with open(file_path, 'r') as f:
@@ -21,7 +41,7 @@ def main():
 
     args = parser.parse_args()
 
-    project_path = args.project_path
+    project_path = os.path.join(os.getcwd(), args.project_path) if not os.path.isabs(args.project_path) else args.project_path
     properties_hierarchy = None
     flow_name = args.flow_name
     user_config = None
@@ -40,6 +60,7 @@ def main():
             # Display discovered property files and prompt user for selection
             properties_hierarchy = analyzer.get_properties_hierarchy()
             if properties_hierarchy:
+                logger.debug("Property files discovered in hierarchy")
                 print("Please Confirm Property File Hierarchy. (For Example, Prod First then Dev then Global):")
                 for prop_file in properties_hierarchy:
                     print(f"{prop_file}: {properties_hierarchy[prop_file]}")
@@ -48,20 +69,22 @@ def main():
                 selected_indices = [int(idx.strip()) for idx in selection.split(',')]
                 
                 properties_hierarchy = PropertyHierarchy({i: properties_hierarchy[idx] for i, idx in enumerate(selected_indices) if idx < len(properties_hierarchy)})
+                logger.debug(f"Selected property hierarchy: {properties_hierarchy}")
                 
                 # Re-initialize the analyzer with the selected properties
                 analyzer = MuleFlowAnalyzer(project_path, properties_hierarchy)
             else:
-                print("No property files discovered.")
+                logger.warning("No property files discovered")
         else:
+            logger.debug("Using provided properties hierarchy")
             # TODO: Properties hierarchy was provided, but not implemented yet
             pass  # Not Implemented
 
         # Further analysis or operations can be added here
         analyzer.analyze_mule_flows(flow_name)
-        pass
 
     except Exception as e:
+        logger.error(f"Error during analysis: {str(e)}", exc_info=True)
         print(f"Error: {str(e)}")
         return
 

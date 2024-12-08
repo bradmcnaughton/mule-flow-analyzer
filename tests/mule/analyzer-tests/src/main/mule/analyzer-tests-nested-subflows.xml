@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<sftp:config name="LocalFileServer_SFTP_Config" doc:name="SFTP Config" doc:id="19d62804-e159-4ef8-b0e6-df92c2d3dc17" >
+		<sftp:connection host="localhost" />
+	</sftp:config>
+	<flow name="analyzer-test1-nested-flowrefs" doc:id="99a1458f-0c51-4543-be88-23e195da64ae" >
+		<http:basic-security-filter doc:name="Basic security filter" doc:id="d554148a-69fa-4ca9-af06-3e8f213fd2b1" realm="myRealm" />
+		<tracing:set-logging-variable doc:name="loggingVar" doc:id="f516ba01-b37d-4bd0-920e-b7d06d3060d6" variableName="#[loggingVar]" value="123"/>
+		<ee:transform doc:name="Set Variable: myMainVar1" doc:id="44434ef2-02cf-48b6-aec8-f5814b1da708" >
+			<ee:message >
+				<ee:set-attributes ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"headers": {"X-STUFF": 123}
+}]]></ee:set-attributes>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="myMainVar1" ><![CDATA[%dw 2.0
+output application/java
+---
+1]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="set-mySubflowVar-subflow" doc:id="199260e5-4869-4733-8fa3-916d97c08c2a" name="set-mySubflowVar-subflow"/>
+		<ee:transform doc:name="Set Variable: myMainVar2" doc:id="d43cc8da-444d-4c51-be3e-3517287fbc86">
+			<ee:message />
+			<ee:variables>
+				<ee:set-variable variableName="myMainVar2"><![CDATA[%dw 2.0
+output application/java
+---
+7]]></ee:set-variable>
+				<ee:set-variable variableName="undocumentedVariable" ><![CDATA[%dw 2.0
+output application/java
+---
+"DDDDD"]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="set-mySubflowVar2-subflow" doc:id="79d70a7d-51f3-4022-8175-ea374d0f4d33" name="set-mySubflowVar2-subflow"/>
+	</flow>
+	<sub-flow name="set-mySubflowVar-subflow" doc:id="bd91679f-b803-48b7-b9e4-9c505f79b87b" >
+		<ee:transform doc:name="Set Variable: mySubflowVar" doc:id="a05cec57-1506-48d1-b5fa-f9b304f7b2b6" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="mySubflowVar" ><![CDATA[%dw 2.0
+output application/java
+---
+2]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</sub-flow>
+	
+	<sub-flow name="set-mySubflowVar2-subflow" doc:id="8ecc9e2d-0b24-4e86-9e7c-fa3b8d888051" >
+		<ee:transform doc:name="Set Variable: mySubflowVar2" doc:id="231f4ae2-1e43-4a96-82b4-522976d55f6d" >
+			<ee:message />
+			<ee:variables >
+				<ee:set-variable variableName="mySubflowVar2" ><![CDATA[%dw 2.0
+output application/java
+---
+5]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="read-file-subflow" doc:id="8ec42ee4-7c6e-42aa-b92f-5325bbe9223a" name="read-file-subflow"/>
+		<set-payload value='#["PAYLOAD"]' doc:name="Set Payload" doc:id="06453b7f-07bc-4de4-aea5-8d08fb0b46b4" />
+	
+</sub-flow>
+	<sub-flow name="read-file-subflow" doc:id="ce410ef8-be02-4a09-942b-93104382b580" >
+		<sftp:read doc:name="Read File for Payload" doc:id="d301fe1d-5351-414a-a848-d887972b13de" config-ref="LocalFileServer_SFTP_Config" path="/"/>
+	</sub-flow>
+	
+</mule>

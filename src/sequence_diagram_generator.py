@@ -1,6 +1,9 @@
 import os
 import re
 from src.mule_flow_analyzer import MuleFlowElement
+import logging
+
+logger = logging.getLogger(__name__)
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
@@ -373,9 +376,8 @@ class SequenceDiagramGenerator:
             content.append("title Unnamed Flow")
 
         def process_element(element:MuleFlowElement, content:list, tracking_vars:dict):
+            logger.debug(f"Creating UML content for {element.tag}")
             
-            print(f"Creating UML for {element.tag}")
-
             transactions_success_list = ['flow', 'try', 'on-error-continue']
             transactions_failure_list = ['on-error-propagate', 'raise-error']
 
@@ -769,10 +771,6 @@ class SequenceDiagramGenerator:
         @enduml
         """
         
-        # ignore this until later:
-        # \n<size:64><&globe>\n=> \n\nHTTP Endpoint
-
-
         content = []
         content.append("@startuml")
         content.append("!procedure $arrow($legend, $text)") 
@@ -790,7 +788,6 @@ class SequenceDiagramGenerator:
         pass
 
     def render_image(self, diagram_syntax:list, flow_name:str):
-        import default_properties
         from plantweb.render import render_file
         plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
@@ -805,17 +802,21 @@ class SequenceDiagramGenerator:
         with open(infile, 'wb') as fd:
             fd.write('\n'.join(diagram_syntax).encode('utf-8'))
 
-        outfile = render_file(
-            infile=infile,
-            outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.png"),
-            renderopts={
-                "engine": "plantuml",
-                "format": "png"
-            },
-            cacheopts={
-                "use_cache": False
-            }
-        )
+        try:
+            outfile = render_file(
+                infile=infile,
+                outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.png"),
+                renderopts={
+                    "engine": "plantuml", 
+                    "format": "png"
+                },
+                cacheopts={
+                    "use_cache": False
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error rendering diagram for flow {flow_name}: {str(e)}")
+            raise
 
         # Return the final syntax list
         return outfile

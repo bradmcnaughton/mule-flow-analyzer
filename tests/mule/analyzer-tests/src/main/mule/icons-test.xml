@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets" xmlns:ibm-mq="http://www.mulesoft.org/schema/mule/ibm-mq"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/ibm-mq/current/mule-ibm-mq.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd">
+	<email:imap-config name="Email_IMAP" doc:name="Email IMAP" doc:id="93f72193-37b7-4e06-9ce2-1d2bb354c404" >
+		<email:imap-connection host="localhost" />
+	</email:imap-config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="4a9a8331-75ef-4cc3-b40d-55d5121b7d9a" >
+		<http:request-connection host="localhost" port="80" />
+	</http:request-config>
+	<sockets:request-config name="Sockets_config" doc:name="Sockets config" doc:id="7165dd0d-36e4-4668-9fa3-6a147170642a" >
+		<sockets:udp-requester-connection host="localhost" port="123" />
+	</sockets:request-config>
+	<flow name="icons-testFlow" doc:id="4fd055b1-bc30-48c0-ab02-0f226a0df271" >
+		<email:listener-imap doc:name="On New Email - IMAP" doc:id="fd9fa9bd-ba35-4303-8c00-5c965fb9c661" config-ref="Email_IMAP">
+			<scheduling-strategy >
+				<fixed-frequency frequency="60" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</email:listener-imap>
+		<set-payload value="#[payload]" doc:name="Set Request Payload" doc:id="d5ad265d-cbd8-4bbb-b3e1-6ed4ba828aab" />
+		<http:request method="GET" doc:name="POST Customer Details" doc:id="22f8394e-91de-4b70-bcdd-a71c5c7c76ad" config-ref="HTTP_Request_configuration" path="/"/>
+	</flow>
+	<flow name="icons-testFlow1" doc:id="fed22403-70a6-4d92-9b72-2f0f1d5a2369" >
+		<scheduler doc:name="Scheduler" doc:id="32048e09-a581-4099-96bb-46ea182cb050" >
+			<scheduling-strategy >
+				<cron expression="* * * * * *" timeZone="Adelaide/Australia" />
+			</scheduling-strategy>
+		</scheduler>
+		<sockets:send doc:name="Send Data" doc:id="7c23ee63-2dfb-46a5-ba15-a350f3ae23ff" config-ref="Sockets_config"/>
+	</flow>
+</mule>

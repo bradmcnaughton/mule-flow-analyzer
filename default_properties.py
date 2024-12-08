@@ -3,6 +3,10 @@ DEFAULT_PROPERTIES = {
         'plantuml': {
             'server': 'http://localhost:8087/',
             'output_directory': './output/plantuml'
+        },
+        'logging': {
+            'level': 'DEBUG',
+            'file': './output/logs/mule_flow_analyzer.log'
         }
     },
     'diagram_formatting_properties': {

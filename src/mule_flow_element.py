@@ -1,4 +1,7 @@
 from typing import Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MuleFlowElement:
         
@@ -18,7 +21,7 @@ class MuleFlowElement:
         self.children = children or []
         self.processes = processes or []
         self.content = content
-        print(f"Processing {self.tag}")
+        logger.debug(f"Processing {self.tag}")
 
         self.notes = notes
         self.standalone = standalone
