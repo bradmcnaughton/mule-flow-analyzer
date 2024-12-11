@@ -5,7 +5,7 @@ DEFAULT_PROPERTIES = {
             'output_directory': './output/plantuml'
         },
         'logging': {
-            'level': 'DEBUG',
+            'level': 'INFO',
             'file': './output/logs/mule_flow_analyzer.log'
         }
     },

@@ -2,6 +2,8 @@ import os
 import re
 from src.mule_flow_analyzer import MuleFlowElement
 import logging
+import traceback
+from typing import Dict, List, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +16,35 @@ class ArrowType:
         self.arrow = arrow 
         self.priority = priority
 
+class DiagramGenerationError(Exception):
+    """Base exception for diagram generation errors"""
+    pass
+
+class RenderingError(DiagramGenerationError):
+    """Raised when diagram rendering fails"""
+    pass
+
+class ConfigurationError(DiagramGenerationError):
+    """Raised when configuration is invalid"""
+    pass
+
 class SequenceDiagramGenerator:
-    def __init__(self, configuration_properties:dict):
+    def __init__(self, configuration_properties: Dict[str, Any]) -> None:
+        if not configuration_properties:
+            raise ConfigurationError("Configuration properties cannot be empty")
         
+        required_keys = ['diagram_formatting_properties', 'analyzer_properties']
+        missing_keys = [key for key in required_keys if key not in configuration_properties]
+        if missing_keys:
+            raise ConfigurationError(f"Missing required configuration keys: {missing_keys}")
+
         self.properties = configuration_properties
 
         self.mule_box_format = f"box #{self.properties['diagram_formatting_properties']['mule']['box-color']}"
         self.skinparam_options = self.properties['diagram_formatting_properties']['skinparam']
         self.arrow_legend = {}
         
-
-    def add_arrow_to_legend(self, arrow_type, label):
+    def add_arrow_to_legend(self, arrow_type: str, label: Optional[str]) -> None:
         
         high_priority_arrows = ['->']
         
@@ -42,9 +62,7 @@ class SequenceDiagramGenerator:
                 priority=priority
             )
 
-
-
-    def remove_expression_brackets(self, input_string:str) -> str:
+    def remove_expression_brackets(self, input_string: str) -> str:
         """
         Remove the Dataweave expression brackets from the string
         """
@@ -90,10 +108,22 @@ class SequenceDiagramGenerator:
 
         return cleaned_string
 
-    def pretty_participant(self, element:MuleFlowElement, source_or_target:str="source"):
+    def pretty_participant(self, element: MuleFlowElement, source_or_target: str = "source") -> Tuple[Optional[str], Optional[str], str]:
         """
-        Alias MUST be a single word with no special characters if class = 'participant'
-        Other classes use the alias as the name of the actor
+        Formats a Mule flow element as a PlantUML participant.
+
+        Args:
+            element: The Mule flow element to format
+            source_or_target: Whether this is a source or target element ("source" or "target")
+
+        Returns:
+            Tuple containing:
+            - alias: The participant alias (or None)
+            - description: The participant description (or None)
+            - class_name: The participant class name
+
+        Raises:
+            ValueError: If source_or_target is not "source" or "target"
         """
         
         def alias_from_config_ref(element:MuleFlowElement):
@@ -320,6 +350,7 @@ class SequenceDiagramGenerator:
             content.append("'end formatting")
 
         # insert participants placeholder
+        # it will later be replaced by the participants
         content.append("##PP##")
 
         # Determine the Event Source
@@ -330,7 +361,13 @@ class SequenceDiagramGenerator:
         if event_source:
             event_source_alias, event_source_description, event_source_class_name = self.pretty_participant(event_source)
             
-            if event_source_alias:
+            # Check for APIKit flows and manually set the event source alias for APIKit
+            if not event_source_alias and flow.attributes['name'] and re.match(r'^(get|put|post|patch|delete|options):\\', flow.attributes['name'], re.IGNORECASE):
+                logging.debug(f"Setting event source alias for APIKit flow: {flow.attributes['name']}")
+                # TODO: this adds an apikit participant to the diagram outside the mule box, but without any proper labelling/icon etc.
+                event_source_alias = 'apikit'
+                event_source_label = True
+            elif event_source_alias:
                 if ' ' in event_source_alias:
                     # For extra niceness, remove the class name from the sub label as it's implicit in the icon
                     event_source_label = event_source_alias
@@ -787,20 +824,26 @@ class SequenceDiagramGenerator:
         self.render_image(content, flow_name + "_legend")
         pass
 
-    def render_image(self, diagram_syntax:list, flow_name:str):
+    def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
         from plantweb.render import render_file
         plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
         # Remove special characters from flow_name
         flow_name_file_name = re.sub(r'[^a-zA-Z0-9_]', '_', flow_name)
 
-        # create output directory if it doesn't exist
-        os.makedirs(plantuml_output_directory, exist_ok=True)   
+        # Create output directory
+        try:
+            os.makedirs(plantuml_output_directory, exist_ok=True)
+        except OSError as e:
+            raise RenderingError(f"Failed to create output directory: {e}")
                
         # Render the PlantUML diagram
         infile = os.path.join(plantuml_output_directory, f"{flow_name_file_name}.txt")
-        with open(infile, 'wb') as fd:
-            fd.write('\n'.join(diagram_syntax).encode('utf-8'))
+        try:
+            with open(infile, 'wb') as fd:
+                fd.write('\n'.join(diagram_syntax).encode('utf-8'))
+        except IOError as e:
+            raise RenderingError(f"Failed to write diagram file: {e}")
 
         try:
             outfile = render_file(
@@ -815,8 +858,9 @@ class SequenceDiagramGenerator:
                 }
             )
         except Exception as e:
-            logger.error(f"Error rendering diagram for flow {flow_name}: {str(e)}")
-            raise
+            logger.error(f"Error rendering diagram for flow {flow_name}. Plant UML may be unreachable or down. Syntax saved to {infile}.")
+            logger.debug(f"{str(e)}")
+            logger.debug(f"{traceback.format_exc()}")
 
         # Return the final syntax list
         return outfile

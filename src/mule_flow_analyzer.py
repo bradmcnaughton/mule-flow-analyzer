@@ -102,21 +102,30 @@ class MuleFlowAnalyzer:
 
     def _is_mule_file(self, file_path: Path) -> bool:
         try:
-            with file_path.open('r') as f:
+            with file_path.open('r', encoding='utf-8') as f:
                 content = xmltodict.parse(f.read())
                 return 'mule' in content
-        except Exception:
+        except (IOError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read file {file_path}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.warning(f"Error processing file {file_path}: {str(e)}")
             return False
 
     def _discover_project_files(self):
-        mule_dir = Path(self.project_path) / "src" / "main" / "mule"
-        for xml_file in mule_dir.glob("**/*.xml"):
-            if self._is_mule_file(xml_file):
-                relative_path = xml_file.relative_to(self.project_path)
-                with xml_file.open('r') as f:
-                    self.project_files[str(relative_path)] = f.read()
-                pass
-
+        try:
+            mule_dir = Path(self.project_path) / "src" / "main" / "mule"
+            for xml_file in mule_dir.glob("**/*.xml"):
+                try:
+                    if self._is_mule_file(xml_file):
+                        relative_path = xml_file.relative_to(self.project_path)
+                        with xml_file.open('r', encoding='utf-8') as f:
+                            self.project_files[str(relative_path)] = f.read()
+                except Exception as e:
+                    logger.error(f"Error processing XML file {xml_file}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error discovering project files: {str(e)}")
+            raise
 
     # Recursive Helper Function to convert XML Text to a MuleFlowElement
     def xml_to_mule_flow_element(self, xml_string):
@@ -233,29 +242,45 @@ class MuleFlowAnalyzer:
         self.properties_hierarchy = property_files
 
     def _discover_properties_keys(self):
-        self.discovered_properties = {}
-        self.properties_keys = set()  # Initialize properties_keys as a set
-        resources_dir = Path(self.project_path) / "src" / "main" / "resources"
+        try:
+            self.discovered_properties = {}
+            self.properties_keys = set()
+            resources_dir = Path(self.project_path) / "src" / "main" / "resources"
 
-        for index, file_path in self.properties_hierarchy.items():
-            full_path = resources_dir / file_path
-            self.discovered_properties[str(full_path)] = {}
+            for index, file_path in self.properties_hierarchy.items():
+                try:
+                    full_path = resources_dir / file_path
+                    self.discovered_properties[str(full_path)] = {}
 
-            if file_path.endswith('.properties'):
-                with open(full_path, 'r') as file:
-                    for line in file:
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            key, value = line.split('=', 1)
-                            self.discovered_properties[str(full_path)][key.strip()] = value.strip()
-                            self.properties_keys.add(key.strip())
+                    if file_path.endswith('.properties'):
+                        with open(full_path, 'r', encoding='utf-8') as file:
+                            for line in file:
+                                try:
+                                    line = line.strip()
+                                    if line and not line.startswith('#'):
+                                        key, value = line.split('=', 1)
+                                        self.discovered_properties[str(full_path)][key.strip()] = value.strip()
+                                        self.properties_keys.add(key.strip())
+                                except ValueError as e:
+                                    logger.warning(f"Invalid property line in {file_path}: {line.strip()}")
+                                    continue
 
-            elif file_path.endswith('.yaml'):
-                with open(full_path, 'r') as file:
-                    yaml_data = yaml.safe_load(file)
-                    flat_dict = self._flatten_dict(yaml_data)
-                    self.discovered_properties[str(full_path)] = flat_dict
-                    self.properties_keys.update(flat_dict.keys())
+                    elif file_path.endswith('.yaml'):
+                        try:
+                            with open(full_path, 'r', encoding='utf-8') as file:
+                                yaml_data = yaml.safe_load(file)
+                                flat_dict = self._flatten_dict(yaml_data)
+                                self.discovered_properties[str(full_path)] = flat_dict
+                                self.properties_keys.update(flat_dict.keys())
+                        except yaml.YAMLError as e:
+                            logger.error(f"Error parsing YAML file {file_path}: {str(e)}")
+                            raise
+                except Exception as e:
+                    logger.error(f"Error processing property file {file_path}: {str(e)}")
+                    raise
+        except Exception as e:
+            logger.error(f"Error discovering properties: {str(e)}")
+            raise
 
     def _flatten_dict(self, d, parent_key='', sep='.'):
         items = []
@@ -341,37 +366,53 @@ class MuleFlowAnalyzer:
                 return flow_cache[name]
 
             for mule_element in self.project_files.values():
-                # This only finds flows and sub-flows at the root level (e.g. mule tag)
-                for mule_child_element in mule_element.children:
-                    if mule_child_element.tag in ['flow', 'sub-flow']:
-                        if mule_child_element.attributes.get('name') == name:
-                            flow_cache[name] = mule_child_element
-                            return mule_child_element
+                try:
+                    for mule_child_element in mule_element.children:
+                        if mule_child_element.tag in ['flow', 'sub-flow']:
+                            if mule_child_element.attributes.get('name') == name:
+                                flow_cache[name] = mule_child_element
+                                return mule_child_element
+                except AttributeError as e:
+                    logger.warning(f"Invalid mule element structure while searching for flow {name}: {str(e)}")
+                    continue
             return None
 
-        def replace_flow_refs(element:MuleFlowElement):
-            if element.tag == 'flow-ref':
-                flow_ref_name = element.attributes.get('name')
-                referenced_flow = find_flow(flow_ref_name)
-                if referenced_flow:
-                    # Ensure the element has a "children" property
-                    if len(element.children) == 0:
-                        element.children = []
-                    # Append the referenced flow with the actual flow content
-                    # Ordering doesn't matter as flow-refs have no children
-                    element.add_child(referenced_flow)
+        def replace_flow_refs(element: MuleFlowElement):
+            try:
+                if element.tag == 'flow-ref':
+                    flow_ref_name = element.attributes.get('name')
+                    if not flow_ref_name:
+                        logger.warning("Flow-ref found without name attribute")
+                        return element
+                    
+                    referenced_flow = find_flow(flow_ref_name)
+                    if referenced_flow:
+                        if len(element.children) == 0:
+                            element.children = []
+                        element.add_child(referenced_flow)
+                    else:
+                        logger.error(f"Flow Ref not found in project: {flow_ref_name}")
+                        raise ValueError(f"Flow Ref not found in project: {flow_ref_name}")
                 else:
-                    raise ValueError(f"Flow Ref not found in project: {flow_ref_name}")
-            else:
-                if len(element.children) > 0:
-                    for child in element.children:
-                        replace_flow_refs(child)
-            
-            return element
+                    if len(element.children) > 0:
+                        for child in element.children:
+                            replace_flow_refs(child)
+                
+                return element
+            except Exception as e:
+                logger.error(f"Error processing flow reference: {str(e)}")
+                raise
 
-        # Process all files in self.project_files
-        for xml_file, mule_flow_element in self.project_files.items():
-            self.project_files[xml_file] = replace_flow_refs(mule_flow_element)
+        try:
+            for xml_file, mule_flow_element in self.project_files.items():
+                try:
+                    self.project_files[xml_file] = replace_flow_refs(mule_flow_element)
+                except Exception as e:
+                    logger.error(f"Error processing flow refs in {xml_file}: {str(e)}")
+                    raise
+        except Exception as e:
+            logger.error(f"Error in flow reference processing: {str(e)}")
+            raise
 
     def _contains_placeholder(self, text):
         return ('${' in text and '}' in text) or ('Mule::p(' in text) or ('p(' in text and ("'" in text or '"' in text))
@@ -449,8 +490,10 @@ class MuleFlowAnalyzer:
 
         for flow in flows:
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
+            
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
             
             # Keep print for user feedback and add debug logging
-            logger.debug(f"Generated diagram: {image_file}")
-            print(f"Generated {image_file}")
+            if image_file is not None:
+                logger.info(f"Generated diagram: {image_file}")
+            
