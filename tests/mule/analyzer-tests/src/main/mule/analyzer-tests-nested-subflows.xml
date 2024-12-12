@@ -14,7 +14,7 @@ http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/htt
 	<sftp:config name="LocalFileServer_SFTP_Config" doc:name="SFTP Config" doc:id="19d62804-e159-4ef8-b0e6-df92c2d3dc17" >
 		<sftp:connection host="localhost" />
 	</sftp:config>
-	<flow name="analyzer-test1-nested-flowrefs" doc:id="99a1458f-0c51-4543-be88-23e195da64ae" >
+	<flow name="analyzer-test-nested-flowrefs" doc:id="99a1458f-0c51-4543-be88-23e195da64ae" >
 		<http:basic-security-filter doc:name="Basic security filter" doc:id="d554148a-69fa-4ca9-af06-3e8f213fd2b1" realm="myRealm" />
 		<tracing:set-logging-variable doc:name="loggingVar" doc:id="f516ba01-b37d-4bd0-920e-b7d06d3060d6" variableName="#[loggingVar]" value="123"/>
 		<ee:transform doc:name="Set Variable: myMainVar1" doc:id="44434ef2-02cf-48b6-aec8-f5814b1da708" >

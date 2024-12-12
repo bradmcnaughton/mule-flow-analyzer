@@ -4,6 +4,8 @@ import yaml
 import logging
 from src.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
 from default_properties import DEFAULT_PROPERTIES
+from src.constants import DEFAULT_PROJECT_PATH, PROPERTY_FILE_SELECTION_PROMPT, PROPERTY_HIERARCHY_CONFIRMATION
+from src.exceptions import PropertyHierarchyError
 
 # Get logging configuration from default properties
 log_config = DEFAULT_PROPERTIES['analyzer_properties']['logging']
@@ -24,7 +26,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def load_user_config(file_path):
+def load_user_config(file_path: str) -> dict:
+    """
+    Load and parse a YAML configuration file.
+    
+    Args:
+        file_path: Path to the YAML configuration file
+        
+    Returns:
+        dict: Parsed configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If the configuration file doesn't exist
+        yaml.YAMLError: If the YAML file is invalid
+    """
+ 
     try:
         with open(file_path, 'r') as f:
             return yaml.safe_load(f)
@@ -38,19 +54,58 @@ def load_user_config(file_path):
         logger.error(f"Unexpected error loading config file: {str(e)}")
         raise
 
-def main():
-    try:
-        parser = argparse.ArgumentParser(description="Mule Flow Analyzer")
-        parser.add_argument("-p", "--project-path", default=os.getcwd(),
-                            help="Path to the Mule Project for analysis (default: current directory)")
-        parser.add_argument("-props", "--properties-hierarchy", 
-                            help="A comma-separated list of property file names relative to the src/main/resources directory")
-        parser.add_argument("-f", "--flow-name", default=None,
-                            help="The name of the flow to generate a diagram for")
-        parser.add_argument("-c", "--config-path", default=None,
-                            help="The path to a config.yaml file to use for diagram generation")
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parse command line arguments for the Mule Flow Analyzer.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments
+    """
+    parser = argparse.ArgumentParser(description="Mule Flow Analyzer")
+    parser.add_argument("-p", "--project-path", default=DEFAULT_PROJECT_PATH,
+                        help="Path to the Mule Project for analysis (default: current directory)")
+    parser.add_argument("-props", "--properties-hierarchy", 
+                        help="A comma-separated list of property file names relative to the src/main/resources directory")
+    parser.add_argument("-f", "--flow-name", default=None,
+                        help="The name of the flow to generate a diagram for")
+    parser.add_argument("-c", "--config-path", default=None,
+                        help="The path to a config.yaml file to use for diagram generation")
+    return parser.parse_args()
 
-        args = parser.parse_args()
+def select_property_hierarchy(properties_hierarchy: PropertyHierarchy) -> PropertyHierarchy:
+    """
+    Select a subset of property files from the given hierarchy.
+    
+    Args:
+        properties_hierarchy: The PropertyHierarchy object to select from
+        
+    Returns:
+        PropertyHierarchy: A new PropertyHierarchy object with selected properties
+    """
+    print(PROPERTY_HIERARCHY_CONFIRMATION)
+    for prop_file in properties_hierarchy:
+        print(f"{prop_file}: {properties_hierarchy[prop_file]}")
+                            
+    selection = input(PROPERTY_FILE_SELECTION_PROMPT)
+    
+    try:
+        selected_indices = [int(idx.strip()) for idx in selection.split(',')]
+        if any(idx >= len(properties_hierarchy) for idx in selected_indices):
+            raise ValueError("Selected index out of range")
+        return PropertyHierarchy({i: properties_hierarchy[idx] for i, idx in enumerate(selected_indices)})
+    except ValueError as e:
+        logger.error("Invalid input: Please enter comma-separated numbers only")
+        raise PropertyHierarchyError(str(e))
+
+def main() -> int:
+    """
+    Main function for the Mule Flow Analyzer.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
+    try:
+        args = parse_arguments()
 
         project_path = os.path.join(os.getcwd(), args.project_path) if not os.path.isabs(args.project_path) else args.project_path
         
@@ -84,22 +139,7 @@ def main():
                 properties_hierarchy = analyzer.get_properties_hierarchy()
                 if properties_hierarchy:
                     logger.debug("Property files discovered in hierarchy")
-                    print("Please Confirm Property File Hierarchy. (For Example, Prod First then Dev then Global):")
-                    for prop_file in properties_hierarchy:
-                        print(f"{prop_file}: {properties_hierarchy[prop_file]}")
-                                        
-                    selection = input("Enter the numbers of the property files to use (comma-separated, e.g., 1,5,3): ")
-                    
-                    try:
-                        selected_indices = [int(idx.strip()) for idx in selection.split(',')]
-                    except ValueError:
-                        logger.error("Invalid input: Please enter comma-separated numbers only")
-                        raise
-                    
-                    if any(idx >= len(properties_hierarchy) for idx in selected_indices):
-                        raise ValueError("Selected index out of range")
-                    
-                    properties_hierarchy = PropertyHierarchy({i: properties_hierarchy[idx] for i, idx in enumerate(selected_indices)})
+                    properties_hierarchy = select_property_hierarchy(properties_hierarchy)
                     analyzer = MuleFlowAnalyzer(project_path, properties_hierarchy)
                 else:
                     logger.warning("No property files discovered")

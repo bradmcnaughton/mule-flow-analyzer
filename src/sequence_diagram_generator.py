@@ -321,97 +321,6 @@ class SequenceDiagramGenerator:
             
             return actors_stack
 
-        # Initialize tracking variables
-        tracking_vars = {
-            'previous_actor': None,
-            'current_actor': "[",
-            'transaction_stack': [],
-            'actors_stack': [self.mule_box_format, "end box"],
-            'event_source': None,
-            'event_targets': [],
-            'choice_stack': [],
-            'alias_reference': {},
-            'alias_config_reference': {}, # Used to group aliases that share the same config-ref
-            'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
-            'loop_event_source': None,
-            'parallel_sources': [],
-            'async_source': None,
-            'cache_source': None,
-            'create_mode': self.properties['diagram_formatting_properties']['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
-        }
-
-        # The content list will be used to build the diagram syntax
-        content = []
-        content.append("@startuml")
-               
-        if self.skinparam_options:
-            content.append("'start formatting")
-            content += self.skinparam_options
-            content.append("'end formatting")
-
-        # insert participants placeholder
-        # it will later be replaced by the participants
-        content.append("##PP##")
-
-        # Determine the Event Source
-        event_source = flow.children[0] if flow.children else None
-        
-        # Mule does not differentiate between an event source and the first processor in a flow
-        # So test the first element to see if it's a known type of event source
-        if event_source:
-            event_source_alias, event_source_description, event_source_class_name = self.pretty_participant(event_source)
-            
-            # Check for APIKit flows and manually set the event source alias for APIKit
-            if not event_source_alias and flow.attributes['name'] and re.match(r'^(get|put|post|patch|delete|options):\\', flow.attributes['name'], re.IGNORECASE):
-                logging.debug(f"Setting event source alias for APIKit flow: {flow.attributes['name']}")
-                # TODO: this adds an apikit participant to the diagram outside the mule box, but without any proper labelling/icon etc.
-                event_source_alias = 'apikit'
-                event_source_label = True
-            elif event_source_alias:
-                if ' ' in event_source_alias:
-                    # For extra niceness, remove the class name from the sub label as it's implicit in the icon
-                    event_source_label = event_source_alias
-                    if event_source_class_name.lower() in event_source_alias.lower():
-                        event_source_label = ' '.join(word for word in event_source_alias.split() if word.lower() not in event_source_class_name.lower().split())
-                    event_source_label = event_source_label.strip()
-                    event_source_alias = event_source_alias.split(' ')[0]
-                else:
-                    event_source_label = event_source_alias
-            
-            # track the alias references
-            if not tracking_vars['alias_reference'].get(str(event_source), None):
-                # Create it as is
-                tracking_vars['alias_reference'][str(event_source)] = event_source_alias
-            else:
-                # Append a Unique Number to the alias
-                tracking_vars['alias_reference'][str(event_source)] = f"{event_source_alias}_{len(tracking_vars['alias_reference'])}"
-
-            # If we get back an alias, we have a valid event source
-            if event_source_alias:
-                # Track that the flow has an event source
-                tracking_vars['event_source'] = True
-                # Add the event source participant to the actors
-                tracking_vars['actors_stack'] = record_actor(
-                    tracking_vars['alias_reference'].get(str(event_source), event_source_alias), 
-                    tracking_vars['actors_stack'], 
-                    event_source_class_name, 
-                    relative_position="source",
-                    sub_label=event_source_label)
-                # Add the event source line to the diagram
-                content.append(sequence_line_formatter(
-                    tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
-                    str(event_source), 
-                    event_source_description, 
-                    self.properties['diagram_formatting_properties']['arrows']['flow'],
-                    tracking_vars=tracking_vars))
-
-        # Even though the Event Source has started the diagram, we can add the title now
-        # And use it as a flag to prevent the primary flow from being added as a group
-        if flow.attributes.get('name'):
-            content.append(f"title {flow.attributes.get('name')}")
-        else:
-            content.append("title Unnamed Flow")
-
         def process_element(element:MuleFlowElement, content:list, tracking_vars:dict):
             logger.debug(f"Creating UML content for {element.tag}")
             
@@ -763,8 +672,109 @@ class SequenceDiagramGenerator:
 
             return content
 
+        # Initialize tracking variables
+        tracking_vars = {
+            'previous_actor': None,
+            'current_actor': "[",
+            'transaction_stack': [],
+            'actors_stack': [self.mule_box_format, "end box"],
+            'event_source': None,
+            'event_targets': [],
+            'choice_stack': [],
+            'alias_reference': {},
+            'alias_config_reference': {}, # Used to group aliases that share the same config-ref
+            'error_handler_ref': flow.error_handler_ref if flow.error_handler_ref else None,
+            'loop_event_source': None,
+            'parallel_sources': [],
+            'async_source': None,
+            'cache_source': None,
+            'create_mode': self.properties['diagram_formatting_properties']['create_mode'] # If true, will prefix actors with ** to create them if they don't already exist
+        }
+
+        # The content list will be used to build the diagram syntax
+        content = []
+        content.append("@startuml")
+               
+        if self.skinparam_options:
+            content.append("'start formatting")
+            content += self.skinparam_options
+            content.append("'end formatting")
+
+        # insert participants placeholder
+        # it will later be replaced by the participants
+        content.append("##PP##")
+
+        # Determine the Event Source
+        # Check for APIKit flows and manually set the event source alias for APIKit
+        if flow.attributes['name'] and re.match(r'^(get|put|post|patch|delete|options):\\', flow.attributes['name'], re.IGNORECASE):
+            logging.debug(f"Setting event source alias for APIKit flow: {flow.attributes['name']}")
+            event_source = 'apikit'
+            event_source_alias, event_source_description, event_source_class_name = 'apikit', 'APIKit Router', 'apikit'
+        else:
+            event_source = flow.children[0] if flow.children else None
+            # Mule does not differentiate between an event source and the first processor in a flow
+            # So test the first element to see if it's a known type of event source
+            # If it's a listener, subscriber, etc the event_source_alias will be populated.
+            if event_source:
+                event_source_alias, event_source_description, event_source_class_name = self.pretty_participant(event_source)
+
+        if event_source_alias:
+            if ' ' in event_source_alias:
+                # For extra niceness, remove the class name from the sub label as it's implicit in the icon
+                event_source_label = event_source_alias
+                if event_source_class_name.lower() in event_source_alias.lower():
+                    event_source_label = ' '.join(word for word in event_source_alias.split() if word.lower() not in event_source_class_name.lower().split())
+                event_source_label = event_source_label.strip()
+                event_source_alias = event_source_alias.split(' ')[0]
+            else:
+                event_source_label = event_source_alias
+        
+        # track the alias references
+        if not tracking_vars['alias_reference'].get(str(event_source), None):
+            # Create it as is
+            tracking_vars['alias_reference'][str(event_source)] = event_source_alias
+        else:
+            # Append a Unique Number to the alias
+            tracking_vars['alias_reference'][str(event_source)] = f"{event_source_alias}_{len(tracking_vars['alias_reference'])}"
+
+        # If we get back an alias, we have a valid event source
+        if event_source_alias:
+            # Track that the flow has an event source
+            tracking_vars['event_source'] = True
+            # Add the event source participant to the actors
+            tracking_vars['actors_stack'] = record_actor(
+                tracking_vars['alias_reference'].get(str(event_source), event_source_alias), 
+                tracking_vars['actors_stack'], 
+                event_source_class_name, 
+                relative_position="source",
+                sub_label=event_source_label)
+           
+            # Add the event source line to the diagram
+            
+            # Special case for APIKit flows
+            if event_source == 'apikit':
+                target_actor = str(flow.children[0] if flow.children else None)
+            else:
+                target_actor = str(event_source)
+            
+            # Create the event source line
+            content.append("'source event")
+            content.append(sequence_line_formatter(
+                tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
+                target_actor, 
+                event_source_description, 
+                self.properties['diagram_formatting_properties']['arrows']['flow'],
+                tracking_vars=tracking_vars))
+
+        # Even though the Event Source has started the diagram, we can add the title now
+        # And use it as a flag to prevent the primary flow from being added as a group
+        if flow.attributes.get('name'):
+            content.append(f"title {flow.attributes.get('name')}")
+        else:
+            content.append("title Unnamed Flow")
+
+        # Recursively process the flow elements starting with the root flow
         process_element(flow, content, tracking_vars)
-        pass
 
         content.append("@enduml")
 
@@ -824,12 +834,18 @@ class SequenceDiagramGenerator:
         self.render_image(content, flow_name + "_legend")
         pass
 
+    def clean_flow_name(self, flow_name:str) -> str:
+        """
+        Remove special characters from flow_name so it can be used as a file name
+        """
+        return re.sub(r'[^a-zA-Z0-9_-]', '_', flow_name)
+
     def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
         from plantweb.render import render_file
         plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
         # Remove special characters from flow_name
-        flow_name_file_name = re.sub(r'[^a-zA-Z0-9_]', '_', flow_name)
+        flow_name_file_name = self.clean_flow_name(flow_name)
 
         # Create output directory
         try:
@@ -861,6 +877,7 @@ class SequenceDiagramGenerator:
             logger.error(f"Error rendering diagram for flow {flow_name}. Plant UML may be unreachable or down. Syntax saved to {infile}.")
             logger.debug(f"{str(e)}")
             logger.debug(f"{traceback.format_exc()}")
+            return None
 
         # Return the final syntax list
         return outfile

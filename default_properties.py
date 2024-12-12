@@ -45,6 +45,7 @@ DEFAULT_PROPERTIES = {
             # Set any combination of icon and formatting options for specific mule components, by namespace prefix
             # Icons will appear on the source/target actors outside the Mule Box
             # Icon names can be found here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
+            'apikit': '<&compass>',
             'salesforce': '<color:#00A1E0><&cloud>',
             'email': '<&envelope-closed>',
             'scheduler': '<&clock>',

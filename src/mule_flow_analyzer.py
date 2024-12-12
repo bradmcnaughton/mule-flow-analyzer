@@ -482,6 +482,26 @@ class MuleFlowAnalyzer:
                 self.generate_sequence_diagram(xml_file, flow_name)
 
     def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
+        """
+        Generate sequence diagrams for Mule flows in the specified XML file.
+
+        This method processes Mule flows and creates sequence diagrams to visualize the flow of data
+        and interactions between components. The diagrams are saved as image files.
+
+        Args:
+            xml_file (str): The path to the XML file containing the Mule flows, relative to the project root.
+                           This should be a key from the project_files dictionary.
+            flow_name (str, optional): The name of a specific flow to generate a diagram for.
+                                     If None, generates diagrams for all flows in the file.
+
+        Returns:
+            None: The method generates and saves diagram files but does not return any values.
+
+        Note:
+            The generated diagram files will be saved in a location determined by the
+            SequenceDiagramGenerator configuration.
+        """
+        
         mule_flow_element = self.project_files[xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
