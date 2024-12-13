@@ -12,7 +12,7 @@ http://www.mulesoft.org/schema/mule/ibm-mq http://www.mulesoft.org/schema/mule/i
 http://www.mulesoft.org/schema/mule/xml-module http://www.mulesoft.org/schema/mule/xml-module/current/mule-xml-module.xsd
 http://www.mulesoft.org/schema/mule/workday http://www.mulesoft.org/schema/mule/workday/current/mule-workday.xsd">
 	<xml-module:config name="XML_Config" doc:name="XML Config" doc:id="c9ca252a-2044-481c-acff-b98e30259018" />
-	<flow name="batch-job-flowFlow" doc:id="1c9a2234-b7aa-4e90-ae1b-73b59293588c" >
+	<flow name="batch-job-flow" doc:id="1c9a2234-b7aa-4e90-ae1b-73b59293588c" >
 		<sftp:listener doc:name="On New or Updated Ships Log File" doc:id="80fa29de-af90-41e2-9ff0-9691c8556065" config-ref="LocalFileServer_SFTP_Config" directory="/input" timeBetweenSizeCheck="1" timeBetweenSizeCheckUnit="HOURS">
 			<scheduling-strategy >
 				<fixed-frequency frequency="5000" />
