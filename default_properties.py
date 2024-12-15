@@ -7,6 +7,13 @@ DEFAULT_PROPERTIES = {
         'logging': {
             'level': 'INFO',
             'file': './output/logs/mule_flow_analyzer.log'
+        },
+        'tag_rules':{
+            # List of Tags that will always be processors of their parent tag regardless of the tag's prefix
+            'always_processors': ['scheduling-strategy', 'fixed-frequency', 'cron', 'redelivery-policy', 'reconnect', 'error-mapping'],
+            # List of Tags that should avoid being stored as processes, usually because they get put into a control flow element that shares a common prefix.
+            # Note - don't include namespace which may lead to issues if any processors of one namespace use the same tag as another namespace's element
+            'never_processors': ['transform', 'process-records', 'step', 'aggregator', 'on-complete'],
         }
     },
     'diagram_formatting_properties': {
@@ -21,8 +28,11 @@ DEFAULT_PROPERTIES = {
             'wrapWidth 200',
             'maxMessageSize 300',
             '}'
-        ],  
-
+        ],
+        # Default Scale
+        # Without a scale, diagrams can get cut off
+        # Using "max" will scale only when necessary
+        'scale': 'scale max 4096 width',
         # Don't prefix colors with #. E.G. #DD1122 should be DD1122
         # English names can be found here: https://plantuml.com/en/color
         # Gradients should be specified as color1(/|\-)color2 without hashes. E.G. LightBlue-6FBBD3
@@ -31,13 +41,15 @@ DEFAULT_PROPERTIES = {
         },
         'create_mode': False, # True creates processors at the point that are executed. False follows standard sequence diagram format of all participants at top and bottom 
         'verbose': {
-            'processors': True, # Include more details about known processors
+            'processors': True, # Include more details about known processors,
+            'logging': False, # Include logging and tracing processors in the diagram
             'errors': False, # Include the error handler processors in the diagram
             'notes': True, # Include documentation tag as a Note on the actor
         },
         'arrows': {
             'flow': '->',
             'return': '-->',
+            # Async arrow will be used when an async process is started. (One line only)
             'async': '->>',
             'parallel': '-\\'
         },

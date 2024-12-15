@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
+LOGGING_PROCESSORS = ['logger', 'tracing:set-logging-variable']
 
 class ArrowType:
     def __init__(self, label: str, arrow: str, priority: int):
@@ -434,7 +435,7 @@ class SequenceDiagramGenerator:
             #--------------------------------------------------------------------------------------------
             # General Handling for all elements and processors that do something in the flow rather than controlling it
             #--------------------------------------------------------------------------------------------
-            elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS:  
+            elif element.tag not in CONTROL_FLOW_BOUNDARY_TAGS and (element.tag not in LOGGING_PROCESSORS or self.properties['diagram_formatting_properties']['verbose']['logging']):  
                 # Default arrow style, Can be overridden by async or transaction
                 arrow_style=self.properties['diagram_formatting_properties']['arrows']['flow']
                 
@@ -464,7 +465,7 @@ class SequenceDiagramGenerator:
                     # Unset the loop event source
                     tracking_vars['loop_event_source'] = None
 
-                # check if element is starting an async process
+                # check if element is inside an async process
                 if tracking_vars['async_source']:
                     arrow_style=self.properties['diagram_formatting_properties']['arrows']['async']
                     tracking_vars['async_source'] = None
@@ -694,6 +695,9 @@ class SequenceDiagramGenerator:
         # The content list will be used to build the diagram syntax
         content = []
         content.append("@startuml")
+
+        # Define scaling
+        content.append(self.properties['diagram_formatting_properties']['scale'])
                
         if self.skinparam_options:
             content.append("'start formatting")

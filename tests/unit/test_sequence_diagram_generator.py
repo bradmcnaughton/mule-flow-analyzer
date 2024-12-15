@@ -20,8 +20,6 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         test_properties['analyzer_properties']['logging']['file'] = cls.log_dir / 'test_mule_flow_analyzer.log'
 
         cls.analyzer_properties = test_properties
-
-
         
     def setUp(self):
         """Set up test fixtures before each test"""
@@ -192,6 +190,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         flow_name = "analyzer-test-nested-flowrefs"
         flow_source_file = "src\\main\\mule\\analyzer-tests-nested-subflows.xml"
 
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = True
+
         uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
 
         # Find indices of box start and end
@@ -354,11 +354,9 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('participant "db:insert\\n[Insert var1 into db1]"', uml_content)
         self.assertIn('participant "ee:transform\\n[Set Var 2]"', uml_content)
         self.assertIn('participant "db:insert\\n[Insert var2 into db2]"', uml_content)
-        self.assertIn('participant "logger\\n[All Done]"', uml_content)
 
         # Assert transaction notes are present
         self.assertIn('note right of "jms:listener\\n[my-queue-name]" #pink : XA Transaction Starting', uml_content)
-        self.assertIn('note right of "logger\\n[All Done]"  #pink: XA Transaction End', uml_content)
 
         # Assert that the arrows and messages are present
         self.assertIn('"Queue\\nmy-queue-name" -> "jms:listener\\n[my-queue-name]" : Message (my-queue-name)', uml_content)
@@ -424,10 +422,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert that the main components are present
         self.assertIn('participant "http:listener\\n[Listener]"', uml_content)
         self.assertIn('participant "validation:validate-size\\n[Validate Payload Size]"', uml_content)
-        self.assertIn('participant "logger\\n[Log Payload]"', uml_content)
         self.assertIn('participant "file:write\\n[Write Payload to File]"', uml_content)
         self.assertIn('participant "jms:publish\\n[Publish Name to Names Queue]"', uml_content)
-        self.assertIn('participant "logger\\n[Finished Loop #]"', uml_content)
 
         # Assert external systems
         self.assertIn('participant "<size:30><&globe>\\nHTTP" as HTTP', uml_content)
@@ -458,7 +454,6 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert that the main components are present
         self.assertIn('participant "sftp:listener\\n[New Cattle Transcript Uploaded]"', uml_content)
-        self.assertIn('participant "logger\\n[Got Cattle File]"', uml_content)
         self.assertIn('participant "ee:transform\\n[Create requestBody]"', uml_content)
         self.assertIn('participant "http:request\\n[GET Cow Tunes]"', uml_content)
         self.assertIn('participant "ee:transform\\n[Create Mixtape]"', uml_content)
@@ -559,10 +554,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert that the main components are present
         self.assertIn('participant "salesforce:subscribe-channel-listener\\n[Subscribe channel listener]"', uml_content)
-        self.assertIn('participant "logger\\n[Got Subscription]"', uml_content)
         self.assertIn('participant "db:insert\\n[Insert Subscription]"', uml_content)
         self.assertIn('participant "set-variable\\n[customerId]"', uml_content)
-        self.assertIn('participant "logger\\n[Async Email Send]"', uml_content)
         self.assertIn('participant "email:send\\n[New Subscription Email]"', uml_content)
         self.assertIn('participant "db:update\\n[Update Subscription Emails]"', uml_content)
         self.assertIn('participant "salesforce:delete\\n[Delete Subscription]"', uml_content)
@@ -584,10 +577,10 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert async group and sub-flow
         self.assertIn('group #goldenrod async', uml_content)
         self.assertIn('group sub-flow new-subscription-email', uml_content)
-        self.assertIn('"set-variable\\n[customerId]" ->> "logger\\n[Async Email Send]" : ', uml_content)
 
-        # Assert email operations
-        self.assertIn('"email:send\\n[New Subscription Email]" -> "Email" : Email Message', uml_content)
+        # Assert email operations is async
+        async_arrow = self.analyzer_properties['diagram_formatting_properties']['arrows']['async']
+        self.assertIn(f'"email:send\\n[New Subscription Email]" {async_arrow} "Email" : Email Message', uml_content)
         self.assertIn('"Email" --> "email:send\\n[New Subscription Email]" : ', uml_content)
 
         # Assert final Salesforce operation
@@ -595,15 +588,17 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Experience_4" --> "salesforce:delete\\n[Delete Subscription]" : ', uml_content)
 
         # Assert database update in sub-flow
-        self.assertIn('"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.sql', uml_content)
-        self.assertIn('"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.input parameters', uml_content)
-        self.assertIn('"db:update\\n[Update Subscription Emails]" -> "Database\\nA" : Database Change: (Update)', uml_content)
+        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.sql', uml_content)
+        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.input parameters', uml_content)
+        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "Database\\nA" : Database Change: (Update)', uml_content)
         self.assertIn('"Database\\nA" --> "db:update\\n[Update Subscription Emails]" : ', uml_content)
 
     def test_analyzer_control_flows_cache(self):
         """Test analyzer control flows with cache and database operations"""
         flow_name = "control-flows-cache"
         flow_source_file = "src\\main\\mule\\control-flows-cache.xml"
+
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = True
 
         uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
 
@@ -645,10 +640,12 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"ibm-mq:publish\\n[Publish]" -> "Queue\\nidmessages" : Message (idmessages)', uml_content)
         self.assertIn('"Queue\\nidmessages" --> "ibm-mq:publish\\n[Publish]" : ', uml_content)
 
-    def test_analyzer_control_flows_scatter(self):
+    def test_analyzer_control_flows_scatter_and_verbose_logger_output(self):
         """Test analyzer control flows with scatter-gather, first-successful, and parallel-foreach"""
         flow_name = "control-flows-scatterFlow"
         flow_source_file = "src\\main\\mule\\control-flows-scatter.xml"
+
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = True
 
         uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
 

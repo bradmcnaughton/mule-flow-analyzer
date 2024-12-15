@@ -8,6 +8,7 @@ import yaml
 import re
 import copy
 import logging
+from default_properties import DEFAULT_PROPERTIES
 
 logger = logging.getLogger(__name__)
 from src.mule_flow_element import MuleFlowElement
@@ -18,12 +19,15 @@ PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
 # Enum for the Output Format
 OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 
-# List of Tags that will always be processors regardless of the tag's prefix
-ALWAYS_PROCESSOR_TAGS = ['scheduling-strategy', 'fixed-frequency', 'cron', 'redelivery-policy']
+try:
+    ALWAYS_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('always_processors', [])
+except:
+    ALWAYS_PROCESSOR_TAGS = []
 
-# List of Tags that should avoid being stored as processes, usually because they get put into a control flow element that shares a common prefix.
-# Note - don't include namespace which may lead to issues if any processors of one namespace use the same tag as another namespace's element
-NEVER_PROCESSOR_TAGS = ['transform', 'process-records', 'step', 'aggregator', 'on-complete']
+try:
+    NEVER_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('never_processors', [])
+except:
+    NEVER_PROCESSOR_TAGS = []
 
 class MuleFlowAnalyzer:
     
@@ -34,7 +38,7 @@ class MuleFlowAnalyzer:
         self.discovered_properties = None
 
         # Merge user config with default properties
-        from default_properties import DEFAULT_PROPERTIES
+        
         if user_config:
             self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
         else:
