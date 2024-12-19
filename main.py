@@ -24,6 +24,10 @@ logging.basicConfig(
         logging.StreamHandler()  # This will maintain console output
     ]
 )
+
+# Suppress PlantUML Missing ~/.plantwebrc file warning which is INFO for some reason
+logging.getLogger('plantweb.defaults').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 def load_user_config(file_path: str) -> dict:
@@ -69,7 +73,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("-f", "--flow-name", default=None,
                         help="The name of the flow to generate a diagram for")
     parser.add_argument("-c", "--config-path", default=None,
-                        help="The path to a config.yaml file to use for diagram generation")
+                        help="The path to a config.yaml file to use for diagram generation")   
+    parser.add_argument("-o", "--output-path", default=None,
+                        help="The path to the output directory for the generated diagrams. Overwrites the default output path in the config.yaml file")
+    parser.add_argument("-s", "--plantuml-server", default=None,
+                        help="The URL of the PlantUML server to use for diagram generation. Overwrites the default server in the config.yaml file")
+    parser.add_argument("--plant-format", default="png",
+                        help="The format of the PlantUML diagrams to generate (png or svg). Overwrites the default format in the config.yaml file")
+
     return parser.parse_args()
 
 def select_property_hierarchy(properties_hierarchy: PropertyHierarchy) -> PropertyHierarchy:
@@ -115,14 +126,48 @@ def main() -> int:
 
         properties_hierarchy = None
         flow_name = args.flow_name
-        user_config = None
         
+        # User Config gets pre-populated with configuration values that will later be merged into the default properties
+        # The rest of the default properties are loaded and merged in the Sequence Diagram Generator
+        user_config = None
+
+        # Load user config if provided
         if args.config_path:
             try:
                 user_config = load_user_config(args.config_path)
             except Exception as e:
                 logger.error(f"Failed to load config file: {str(e)}")
                 raise
+
+        # If custom output path, create (or update) the user_config with the new output path
+        if args.output_path:
+            if user_config is None:
+                user_config = {}
+            if 'analyzer_properties' not in user_config:
+                user_config['analyzer_properties'] = {}
+            if 'plantuml' not in user_config['analyzer_properties']:
+                user_config['analyzer_properties']['plantuml'] = {}
+            user_config['analyzer_properties']['plantuml']['output_directory'] = args.output_path
+
+        # If custom plantuml server, update the user_config with the new server
+        if args.plantuml_server:
+            if user_config is None:
+                user_config = {}
+            if 'analyzer_properties' not in user_config:
+                user_config['analyzer_properties'] = {}
+            if 'plantuml' not in user_config['analyzer_properties']:
+                user_config['analyzer_properties']['plantuml'] = {}
+            user_config['analyzer_properties']['plantuml']['server'] = args.plantuml_server
+
+        # If custom plantuml format, update the user_config with the new format
+        if args.plant_format:
+            if user_config is None:
+                user_config = {}
+            if 'analyzer_properties' not in user_config:
+                user_config['analyzer_properties'] = {}
+            if 'plantuml' not in user_config['analyzer_properties']:
+                user_config['analyzer_properties']['plantuml'] = {}
+            user_config['analyzer_properties']['plantuml']['format'] = args.plant_format
 
         if args.properties_hierarchy:
             try:

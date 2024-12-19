@@ -2,6 +2,9 @@ DEFAULT_PROPERTIES = {
     'analyzer_properties': {
         'plantuml': {
             'server': 'http://localhost:8087/',
+            # Uncomment for prod - 
+            # 'server': 'https://www.plantuml.com/plantuml/',
+            'format': 'png',
             'output_directory': './output/plantuml'
         },
         'logging': {
@@ -14,6 +17,8 @@ DEFAULT_PROPERTIES = {
             # List of Tags that should avoid being stored as processes, usually because they get put into a control flow element that shares a common prefix.
             # Note - don't include namespace which may lead to issues if any processors of one namespace use the same tag as another namespace's element
             'never_processors': ['transform', 'process-records', 'step', 'aggregator', 'on-complete'],
+            # List of Tags that should be treated as internal targets and not an external connection
+            'internal_targets': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module', 'mule-apikit']
         }
     },
     'diagram_formatting_properties': {
@@ -67,9 +72,6 @@ DEFAULT_PROPERTIES = {
             'workday': '<&wrench>',
             'some-customers-sapi': '<&person>'
         },
-        'processors': {
-            'internal': ['batch', 'ee', 'java', 'os', 'scripting', 'spring', 'tracing', 'tracking', 'validation', 'xml-module', 'mule-apikit']
-        },
         'transactions':
         {
             'arrows': {
@@ -80,6 +82,10 @@ DEFAULT_PROPERTIES = {
         },
         'errors': {
             'color': 'DD1122'
+        },
+        'try': {
+            'label-color': 'gold',
+            'background-color': 'transparent',
         },
         # Async can be highlighted with a note or a group (or both)
         # If both are false, the async arrow will still be shown

@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 import os
 import shutil
+import random
 from src.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
 from src.mule_flow_analyzer import MuleFlowAnalyzer
 from default_properties import DEFAULT_PROPERTIES
@@ -19,6 +20,22 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         test_properties['analyzer_properties']['plantuml']['output_directory'] = cls.output_dir
         test_properties['analyzer_properties']['logging']['file'] = cls.log_dir / 'test_mule_flow_analyzer.log'
 
+        # Randomize the colors for testing
+        test_properties['diagram_formatting_properties']['mule']['box-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['transactions']['arrows'][1] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['transactions']['arrows'][2] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['transactions']['arrows'][3] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['errors']['color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['try']['label-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['try']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['async']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['batch']['step']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['batch']['on-complete']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['batch']['process-records']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['batch']['aggregator']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        test_properties['diagram_formatting_properties']['batch']['job']['background-color'] = ''.join(random.choices('0123456789ABCDEF', k=6))
+        
+        # Set the properties for the analyzer
         cls.analyzer_properties = test_properties
         
     def setUp(self):
@@ -196,7 +213,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Find indices of box start and end
         # TODO: Move to a general formatting test case
-        box_start_idx = uml_content.index('box #LightBlue-6FBBD3')
+        box_start_idx = uml_content.index(f'box #{self.analyzer_properties["diagram_formatting_properties"]["mule"]["box-color"]}')
         box_end_idx = uml_content.index('end box')
         
         # Check all Mule component participant lines are between box start and end
@@ -251,8 +268,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"workday:student-transfer-credit\\n[Pay Shanty Writers]" -> "Workday" : student-transfer-credit', uml_content)
 
         # Assert error handling
-        self.assertIn('alt#gold #transparent Try', uml_content)
-        self.assertIn('note over "workday:student-transfer-credit\\n[Pay Shanty Writers]" #DD1122: Inline Error Handler', uml_content)
+        self.assertIn(f'alt#{self.analyzer_properties["diagram_formatting_properties"]["try"]["label-color"]} #{self.analyzer_properties["diagram_formatting_properties"]["try"]["background-color"]} Try', uml_content)
+        self.assertIn(f'note over "workday:student-transfer-credit\\n[Pay Shanty Writers]" #{self.analyzer_properties["diagram_formatting_properties"]["errors"]["color"]}: Inline Error Handler', uml_content)
 
         # Assert subflow
         self.assertIn('group sub-flow multi-purpose-subflow', uml_content)
@@ -356,22 +373,23 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('participant "db:insert\\n[Insert var2 into db2]"', uml_content)
 
         # Assert transaction notes are present
-        self.assertIn('note right of "jms:listener\\n[my-queue-name]" #pink : XA Transaction Starting', uml_content)
+        transaction_color = self.analyzer_properties["diagram_formatting_properties"]["transactions"]["arrows"][1]  # Using first transaction color
+        self.assertIn(f'note right of "jms:listener\\n[my-queue-name]" #{transaction_color} : XA Transaction Starting', uml_content)
 
         # Assert that the arrows and messages are present
         self.assertIn('"Queue\\nmy-queue-name" -> "jms:listener\\n[my-queue-name]" : Message (my-queue-name)', uml_content)
-        self.assertIn('"ee:transform\\n[Set Var 1]" -[#pink]> "ee:transform\\n[Set Var 1]" : message.set payload', uml_content)
-        self.assertIn('"ee:transform\\n[Set Var 1]" -[#pink]> "ee:transform\\n[Set Var 1]" : variables.variableName: var1', uml_content)
-        self.assertIn('"db:insert\\n[Insert var1 into db1]" -[#pink]> "Database\\nA" : Database Change: (Insert)', uml_content)
-        self.assertIn('"Database\\nA" -[#pink]-> "db:insert\\n[Insert var1 into db1]" : ', uml_content)
-        self.assertIn('"ee:transform\\n[Set Var 2]" -[#pink]> "ee:transform\\n[Set Var 2]" : variables.variableName: var2', uml_content)
-        self.assertIn('"db:insert\\n[Insert var2 into db2]" -[#pink]> "Database\\nB" : Database Change: (Insert)', uml_content)
-        self.assertIn('"Database\\nB" -[#pink]-> "db:insert\\n[Insert var2 into db2]" : ', uml_content)
+        self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : message.set payload', uml_content)
+        self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : variables.variableName: var1', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "Database\\nA" : Database Change: (Insert)', uml_content)
+        self.assertIn(f'"Database\\nA" -[#{transaction_color}]-> "db:insert\\n[Insert var1 into db1]" : ', uml_content)
+        self.assertIn(f'"ee:transform\\n[Set Var 2]" -[#{transaction_color}]> "ee:transform\\n[Set Var 2]" : variables.variableName: var2', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "Database\\nB" : Database Change: (Insert)', uml_content)
+        self.assertIn(f'"Database\\nB" -[#{transaction_color}]-> "db:insert\\n[Insert var2 into db2]" : ', uml_content)
 
         # Assert SQL-related messages
-        self.assertIn('"db:insert\\n[Insert var1 into db1]" -[#pink]> "db:insert\\n[Insert var1 into db1]" : insert.sql', uml_content)
-        self.assertIn('"db:insert\\n[Insert var2 into db2]" -[#pink]> "db:insert\\n[Insert var2 into db2]" : insert.sql', uml_content)
-        self.assertIn('"db:insert\\n[Insert var2 into db2]" -[#pink]> "db:insert\\n[Insert var2 into db2]" : insert.input parameters', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "db:insert\\n[Insert var1 into db1]" : insert.sql', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "db:insert\\n[Insert var2 into db2]" : insert.sql', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "db:insert\\n[Insert var2 into db2]" : insert.input parameters', uml_content)
 
     def test_analyzer_control_flows_single_choice(self):
         """Test analyzer control flows with single choice"""
@@ -409,7 +427,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('else else', uml_content)
         
         # Assert error handling
-        self.assertIn('note over "raise-error\\n[Raise Time is a Flat Circle]" #DD1122: Raising Error:\\nANY\\n\\nError Handler:\\nInline Error Handler', uml_content)
+        self.assertIn(f'note over "raise-error\\n[Raise Time is a Flat Circle]" #{self.analyzer_properties["diagram_formatting_properties"]["errors"]["color"]}: Raising Error:\\nANY\\n\\nError Handler:\\nInline Error Handler', uml_content)
         self.assertIn('end', uml_content)
 
     def test_analyzer_control_flows_loops(self):
@@ -473,8 +491,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"sftp:listener\\n[New Cattle Transcript Uploaded]" -> "sftp:listener\\n[New Cattle Transcript Uploaded]" : scheduling-strategy.timeUnit: SECONDS', uml_content)
 
         # Assert try blocks
-        self.assertIn('alt#gold #transparent Try Getting Tunes', uml_content)
-        self.assertIn('alt#gold #transparent Try Creating Request Arguments', uml_content)
+        self.assertIn(f'alt#{self.analyzer_properties["diagram_formatting_properties"]["try"]["label-color"]} #{self.analyzer_properties["diagram_formatting_properties"]["try"]["background-color"]} Try Getting Tunes', uml_content)
+        self.assertIn(f'alt#{self.analyzer_properties["diagram_formatting_properties"]["try"]["label-color"]} #{self.analyzer_properties["diagram_formatting_properties"]["try"]["background-color"]} Try Creating Request Arguments', uml_content)
         
         # Assert until successful blocks
         self.assertIn('loop Until Successful max retries: 3', uml_content)
@@ -489,8 +507,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Queue\\nroadtrip" --> "anypoint-mq:publish\\n[Publish Tracklist to Queue]" : ', uml_content)
 
         # Assert error handling
-        self.assertIn('note over "ee:transform\\n[Create requestBody]" #DD1122: Inline Error Handler', uml_content)
-        self.assertIn('note over "http:request\\n[GET Cow Tunes]" #DD1122: Inline Error Handler', uml_content)
+        self.assertIn(f'note over "ee:transform\\n[Create requestBody]" #{self.analyzer_properties["diagram_formatting_properties"]["errors"]["color"]}: Inline Error Handler', uml_content)
+        self.assertIn(f'note over "http:request\\n[GET Cow Tunes]" #{self.analyzer_properties["diagram_formatting_properties"]["errors"]["color"]}: Inline Error Handler', uml_content)
 
     def test_analyzer_icons_test_flow(self):
         """Test analyzer icons test flow with email and HTTP"""
@@ -575,7 +593,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Database\\nA" --> "db:insert\\n[Insert Subscription]" : ', uml_content)
 
         # Assert async group and sub-flow
-        self.assertIn('group #goldenrod async', uml_content)
+        self.assertIn(f'group #{self.analyzer_properties["diagram_formatting_properties"]["async"]["background-color"]} async', uml_content)
         self.assertIn('group sub-flow new-subscription-email', uml_content)
 
         # Assert email operations is async

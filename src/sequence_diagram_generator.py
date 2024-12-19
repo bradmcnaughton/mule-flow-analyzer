@@ -214,7 +214,7 @@ class SequenceDiagramGenerator:
                     class_name = element.tag.split(":")[0]
                     alias = alias_from_config_ref(element)
                     description = f"{element.tag.split(':')[1]}"
-                elif element.tag.split(":")[0] not in self.properties['diagram_formatting_properties']['processors']['internal']:
+                elif element.tag.split(":")[0] not in self.properties['analyzer_properties']['tag_rules']['internal_targets']:
                     # External Processor
                     class_name = "http"
                     alias = alias_from_config_ref(element)
@@ -412,7 +412,7 @@ class SequenceDiagramGenerator:
                     # Wrap the async in a group
                     content.append(f"group #{self.properties['diagram_formatting_properties']['async'].get('background-color', 'transparent')} async")
             elif element.tag == 'try':
-                content.append(f"alt#gold #transparent {element.attributes.get('documentation:name', 'Try')}")
+                content.append(f"alt#{self.properties['diagram_formatting_properties']['try']['label-color']} #{self.properties['diagram_formatting_properties']['try']['background-color']} {element.attributes.get('documentation:name', 'Try')}")
             elif element.tag.split(':')[0] == 'batch':
                 # Batch Branch Grouping
                 if element.tag == 'batch:job' and self.properties['diagram_formatting_properties']['batch']['job']['group']:
@@ -868,10 +868,11 @@ class SequenceDiagramGenerator:
         try:
             outfile = render_file(
                 infile=infile,
-                outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.png"),
+                outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.{self.properties['analyzer_properties']['plantuml']['format']}"),
                 renderopts={
                     "engine": "plantuml", 
-                    "format": "png"
+                    "format": self.properties['analyzer_properties']['plantuml']['format'],
+                    "server": self.properties['analyzer_properties']['plantuml']['server']
                 },
                 cacheopts={
                     "use_cache": False
