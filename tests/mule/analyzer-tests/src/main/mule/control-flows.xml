@@ -135,7 +135,7 @@ output application/java
 				</error-handler>
 			</try>
 			<until-successful maxRetries="${cow.tunes.retries}" doc:name="Until Successful" doc:id="e735ee42-8208-4b32-ad1f-8019d66dadc6" millisBetweenRetries="70000">
-			<http:request method="GET" doc:name="GET Cow Tunes" doc:id="65f73b71-0d1d-4ad6-8f68-1a862f42b1ef" path="/tunes">
+			<http:request method="GET" doc:name="GET Cow Tunes" doc:id="65f73b71-0d1d-4ad6-8f68-1a862f42b1ef" path="#[Mule::p('cow.tunes.path')]" config-ref="HTTP_Request_configuration">
 				<http:query-params><![CDATA[#[output application/java
 ---
 {

@@ -9,7 +9,7 @@ Depending on your output format, text files and/or diagrams will be generated wi
 ## Usage
 
 ```bash
-python main.py [-p PROJECT_PATH] [-props PROPERTIES_HIERARCHY] [-f FLOW_NAME] [-c CONFIG_PATH]
+python main.py [-p PROJECT_PATH] [-props PROPERTIES_HIERARCHY] [-f FLOW_NAME] [-c CONFIG_PATH] [-o OUTPUT_PATH] [-s PLANTUML_SERVER] [--plant-format PLANTUML_FORMAT]
 ```
 
 ### Arguments
@@ -19,33 +19,33 @@ python main.py [-p PROJECT_PATH] [-props PROPERTIES_HIERARCHY] [-f FLOW_NAME] [-
 - `-f, --flow-name`: Can be used to restrict analysis to a specific flow only. Use the `name` attribute of any `flow` tag.
 - `-c, --config-path`: Default configuration for analyzer can be overriden using a custom yaml file. See Overriding Configuration below.
 - `-o, --output-path`: Path to the output directory for the generated diagrams. Overwrites the default output path, even if one is specified in a custom configuration file.
-- `-s, --plantuml-server`: The URL of the PlantUML server to use for diagram generation. Overwrites the default server in the config.yaml file
+- `-s, --plantuml-server`: The URL (including protocol, path and non-standard ports) of the PlantUML server to use for diagram generation. Overwrites the default server in the config.yaml file. E.G. https://www.plantuml.com/plantuml/
 - `--plant-format`: The format of the PlantUML diagrams to generate (png or svg). Overwrites the default format in the config.yaml file
 
 ### Examples
 
-Analyze a specific flow in the current directory:
+Analyze only a specific flow in the current directory:
 
 ```bash
 python main.py -f my-flow-name
 ```
 
-Analyze a project at /path/to/project with custom property hierarchy:
+Analyze a project at /path/to/project and use a custom property hierarchy:
 
 ```bash
 python main.py -p /path/to/project -props prod.properties,dev.properties,global.properties
 ```
 
-Use a custom configuration file and process all flows in the current project directory:
+Use a custom configuration file for the analyzer, and process all flows in the current project directory:
 
 ```bash
 python main.py -c my-config.yaml
 ```
 
-Write the output to a custom directory:
+Write the output diagrams/files to a custom directory:
 
 ```bash
-python main.py -o /tmp/mulesoft-flow-analyzer
+python main.py -o /tmp/mulesoft-flow-analyzer-output
 ```
 
 Use a custom PlantUML server and format:
@@ -60,6 +60,8 @@ A PlantUML server is required to generate the diagrams. This can either be run l
 
 ### Running the PlantUML server locally with Docker
 
+No MuleSoft code is required to be sent to a public server, only the generated UML. If you don't want to send the UML to a public server, you can run the PlantUML server locally.
+
 Pull the PlantUML server image:
 
 ```bash
@@ -73,6 +75,8 @@ docker run -d -p 8087:8080 plantuml/plantuml-server:jetty
 ```
 
 Refer to the [Overriding Configuration](#overriding-configuration) section for how to specify the server address and port in the configuration file under analyzer_properties -> plantuml.
+
+Alternatively, use the `-s` argument to specify the server address and port when running the analyzer.
 
 ## Overriding Configuration
 
@@ -96,10 +100,9 @@ analyzer_properties:
     server: "http://my-plantuml-server:8080/" # A PlantUML server URL
     output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
 
-  # Logging level (INFO, DEBUG, etc.) and path to log file for the Analyzer
   logging:
     level: "INFO"
-    file: "./output/logs/mule_flow_analyzer.log"
+    file: "/tmp/mfa-logs/mule_flow_analyzer.log"
 
   tag_rules:
     # A "Processor" is an action that a participant can perform on itself.
@@ -158,7 +161,7 @@ diagram_formatting_properties:
   verbose:
     # Verbosity can be tweaked for different aspects. Increasing verbosity leads to bigger diagrams/more output
     processors: True # Include more details about known processors
-    logging: False # Include logging and tracing processors in the diagram (Makes diagrams bigger)
+    logging: False # Include MuleSoft logging and tracing processors in the diagram (Makes diagrams bigger)
     errors: False # Include the error handler processors in the diagram
     notes: True # Include any documentation tag values as a Note on the actor
 
@@ -239,3 +242,11 @@ diagram_formatting_properties:
     label-color: "gold" # Color of the try scope label
     background-color: "transparent" # Background color of the try scope
 ```
+
+## Troubleshooting
+
+If you encounter an error, check the log file for more information. The log file is located at the path specified in the configuration file (default is /tmp/mfa-logs/mule_flow_analyzer.log).
+
+If the log file is not found, check the default properties file for the correct path.
+
+The log level can be set to DEBUG to get more information in the configuration file.

@@ -3,6 +3,8 @@ from pathlib import Path
 import os
 import shutil
 import random
+import yaml
+from unittest.mock import patch, MagicMock
 from src.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
 from src.mule_flow_analyzer import MuleFlowAnalyzer
 from default_properties import DEFAULT_PROPERTIES
@@ -15,7 +17,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         cls.output_dir = Path('tests/output/plantuml')
         cls.log_dir = Path('tests/output/logs')
         
-        # Overwrite Defautl Properties with some testing specific properties
+        # Overwrite Default Properties with some testing specific properties
         test_properties = DEFAULT_PROPERTIES
         test_properties['analyzer_properties']['plantuml']['output_directory'] = cls.output_dir
         test_properties['analyzer_properties']['logging']['file'] = cls.log_dir / 'test_mule_flow_analyzer.log'
@@ -57,10 +59,16 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
             shutil.rmtree(self.output_dir)
         os.makedirs(self.output_dir)
 
+        # Set up the render_file mock
+        self.render_patcher = patch('plantweb.render.render_file')
+        self.mock_render_file = self.render_patcher.start()
+        self.mock_render_file.return_value = str(self.output_dir / "test_output.png")
+
     def tearDown(self):
         """Clean up after each test"""
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
+        self.render_patcher.stop()
 
     def test_initialization_with_empty_config(self):
         """Test that initializing with empty config raises ConfigurationError"""
@@ -479,7 +487,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert external systems
         self.assertIn('participant "<size:30><&file>\\nLocalFileServer SFTP" as LocalFileServer', uml_content)
-        self.assertIn('participant "<size:30><&globe>\\nHTTP" as HTTP', uml_content)
+        self.assertIn('participant "<size:30><&globe>\\nRequest" as HTTP', uml_content)
         self.assertIn('queue "Queue\\nroadtrip"', uml_content)
 
         # Assert initial event
@@ -499,7 +507,12 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('loop Until Successful - Never Give Up max retries: 99999', uml_content)
 
         # Assert HTTP request
-        self.assertIn('"http:request\\n[GET Cow Tunes]" -> "HTTP" : HTTP Request: (GET /tunes)', uml_content)
+        cow_tunes_path = "tests\\mule\\analyzer-tests\\src\\main\\resources\\properties\\dummy.yaml"
+        with open(cow_tunes_path, 'r') as file:
+            dummy_yaml = yaml.safe_load(file)
+        cow_tunes_path_value = dummy_yaml['cow']['tunes']['path']
+        
+        self.assertIn(f'"http:request\\n[GET Cow Tunes]" -> "HTTP" : HTTP Request: (GET {cow_tunes_path_value})', uml_content)
         self.assertIn('"HTTP" --> "http:request\\n[GET Cow Tunes]" : ', uml_content)
 
         # Assert queue message
@@ -646,7 +659,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert database stored procedure details
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : stored-procedure.sql', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.key: id', uml_content)
-        self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.value: #[payload.id]', uml_content)
+        self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.value: payload.id', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : output-parameters.key: 0', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : output-parameters.type: STRUCT', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "Database\\nB" : Database Change: (Stored procedure)', uml_content)
@@ -711,6 +724,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert parallel-foreach
         self.assertIn('loop Parallel For Each\\nCollection: vars.booty', uml_content)
         self.assertIn('"set-payload\\n[Set Payload]" -> "logger\\n[Booty Value]" : ', uml_content)
+
+    # TODO: Add test for text output
 
 if __name__ == '__main__':
     unittest.main()

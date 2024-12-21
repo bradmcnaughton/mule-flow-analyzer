@@ -3,14 +3,17 @@ import os
 import yaml
 import logging
 from src.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
+from src.constants import OutputFormat
 from default_properties import DEFAULT_PROPERTIES
 from src.constants import DEFAULT_PROJECT_PATH, PROPERTY_FILE_SELECTION_PROMPT, PROPERTY_HIERARCHY_CONFIRMATION
 from src.exceptions import PropertyHierarchyError
+from __init__ import __version__
 
 # Get logging configuration from default properties
 log_config = DEFAULT_PROPERTIES['analyzer_properties']['logging']
 log_level = getattr(logging, log_config['level'].upper())
 log_file = log_config['file']
+log_format = log_config['format']
 
 # Create output directory for logs if it doesn't exist
 os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -18,7 +21,7 @@ os.makedirs(os.path.dirname(log_file), exist_ok=True)
 # Configure logging with settings from default_properties
 logging.basicConfig(
     level=log_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format=log_format,
     handlers=[
         logging.FileHandler(log_file),
         logging.StreamHandler()  # This will maintain console output
@@ -67,21 +70,30 @@ def parse_arguments() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description="Mule Flow Analyzer")
     parser.add_argument("-p", "--project-path", default=DEFAULT_PROJECT_PATH,
-                        help="Path to the Mule Project for analysis (default: current directory)")
+                        help="Path to the root directory of the Mule Project for analysis (default: current directory)")
+    
+    # TODO: Support external properties files
     parser.add_argument("-props", "--properties-hierarchy", 
                         help="A comma-separated list of property file names relative to the src/main/resources directory")
     parser.add_argument("-f", "--flow-name", default=None,
-                        help="The name of the flow to generate a diagram for")
+                        help="The name of the flow (name attribute of the flow tag) to generate a diagram for")
     parser.add_argument("-c", "--config-path", default=None,
-                        help="The path to a config.yaml file to use for diagram generation")   
+                        help="The path to a config.yaml file the analyzer will use for diagram generation and internal settings")   
     parser.add_argument("-o", "--output-path", default=None,
-                        help="The path to the output directory for the generated diagrams. Overwrites the default output path in the config.yaml file")
-    parser.add_argument("-s", "--plantuml-server", default=None,
-                        help="The URL of the PlantUML server to use for diagram generation. Overwrites the default server in the config.yaml file")
-    parser.add_argument("--plant-format", default="png",
-                        help="The format of the PlantUML diagrams to generate (png or svg). Overwrites the default format in the config.yaml file")
+                        help="The path to an output directory for the generated diagrams. Always overrides the output path in a default or custom config.yaml file")
+    parser.add_argument("-s", "--plantuml-server", default=None, dest="plantuml_server",
+                        help="The URL of the PlantUML server to use for diagram generation. Always overrides the server in a default or custom config.yaml file")
+    parser.add_argument("--plant-format", default="png", dest="plant_format",
+                        help="The format of the PlantUML diagrams to generate (png or svg). Always overrides the format in a default or custom config.yaml file")
+    parser.add_argument("--output-text", action='store_true',
+                        help="If set, the output will be in text format.")
+    parser.add_argument('-v', '--version', action='version', version=f'Mule Flow Analyzer v{__version__}')
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    # Track which arguments were explicitly provided
+    args.explicit_args = {action.dest for action in parser._actions if action.dest in vars(args) and getattr(args, action.dest) != action.default}
+    
+    return args
 
 def select_property_hierarchy(properties_hierarchy: PropertyHierarchy) -> PropertyHierarchy:
     """
@@ -116,6 +128,9 @@ def main() -> int:
         int: Exit code (0 for success, 1 for failure)
     """
     try:
+        
+        logger.info(f"Started Mule Flow Analyzer v{__version__}")
+        
         args = parse_arguments()
 
         project_path = os.path.join(os.getcwd(), args.project_path) if not os.path.isabs(args.project_path) else args.project_path
@@ -129,7 +144,7 @@ def main() -> int:
         
         # User Config gets pre-populated with configuration values that will later be merged into the default properties
         # The rest of the default properties are loaded and merged in the Sequence Diagram Generator
-        user_config = None
+        user_config = {}
 
         # Load user config if provided
         if args.config_path:
@@ -141,18 +156,20 @@ def main() -> int:
 
         # If custom output path, create (or update) the user_config with the new output path
         if args.output_path:
-            if user_config is None:
-                user_config = {}
             if 'analyzer_properties' not in user_config:
                 user_config['analyzer_properties'] = {}
             if 'plantuml' not in user_config['analyzer_properties']:
                 user_config['analyzer_properties']['plantuml'] = {}
             user_config['analyzer_properties']['plantuml']['output_directory'] = args.output_path
 
+        # If custom output type, update the user_config with the new output type
+        if args.output_text:
+            if 'analyzer_properties' not in user_config:
+                user_config['analyzer_properties'] = {}
+            user_config['analyzer_properties']['output_type'] = OutputFormat.TEXT
+
         # If custom plantuml server, update the user_config with the new server
         if args.plantuml_server:
-            if user_config is None:
-                user_config = {}
             if 'analyzer_properties' not in user_config:
                 user_config['analyzer_properties'] = {}
             if 'plantuml' not in user_config['analyzer_properties']:
@@ -161,13 +178,19 @@ def main() -> int:
 
         # If custom plantuml format, update the user_config with the new format
         if args.plant_format:
-            if user_config is None:
-                user_config = {}
             if 'analyzer_properties' not in user_config:
                 user_config['analyzer_properties'] = {}
             if 'plantuml' not in user_config['analyzer_properties']:
                 user_config['analyzer_properties']['plantuml'] = {}
             user_config['analyzer_properties']['plantuml']['format'] = args.plant_format
+
+        # Debug logging to see argument values
+        logger.debug(f"plantuml_server: {args.plantuml_server}")
+        logger.debug(f"plant_format: {args.plant_format}")
+        
+        # Warning if output_text is true but plant options are also explicitly passed
+        if args.output_text and ('plantuml_server' in args.explicit_args or 'plant_format' in args.explicit_args):
+            logger.warning("Output type is set to TEXT but PlantUML options are also passed. PlantUML options will be ignored.")
 
         if args.properties_hierarchy:
             try:

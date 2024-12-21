@@ -9,15 +9,13 @@ import re
 import copy
 import logging
 from default_properties import DEFAULT_PROPERTIES
+from src.constants import OutputFormat
 
 logger = logging.getLogger(__name__)
 from src.mule_flow_element import MuleFlowElement
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
-
-# Enum for the Output Format
-OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
 
 try:
     ALWAYS_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('always_processors', [])
@@ -37,14 +35,8 @@ class MuleFlowAnalyzer:
         self.properties_hierarchy = PropertyHierarchy({})
         self.discovered_properties = None
 
-        # Merge user config with default properties
-        
-        if user_config:
-            self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
-        else:
-            self.configuration_properties = DEFAULT_PROPERTIES
-
-        # Debugging Flag - will be replaced with actual input flag later
+        # Debugging Flags - will be replaced with actual input flag later
+        # TODO: Allow these to be set in config file
         self.debug_xml = True
         self.debug_options = {
             "file": False,
@@ -53,8 +45,14 @@ class MuleFlowAnalyzer:
             "content": False
         }
 
+        # Merge user config with default properties       
+        if user_config:
+            self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
+        else:
+            self.configuration_properties = DEFAULT_PROPERTIES
+
         # Output Type Flag - will be replaced with actual input flag later
-        self.output_format = OutputFormat.SEQUENCE
+        self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
 
         # Tags to skip when printing the flow structure
         self.skip_tags = ["flow-ref", "logger", "tracing:set-logging-variable"]
@@ -94,7 +92,7 @@ class MuleFlowAnalyzer:
         
         mule_dir = path / "src" / "main" / "mule"
         if not mule_dir.is_dir():
-            raise ValueError(f"Invalid project structure. Missing src/main/mule directory: {mule_dir}")
+            raise ValueError(f"Invalid MuleSoft project structure. Missing src/main/mule directory at: {path}. Ensure the utility is run from the root of the MuleSoft project, or with the -p flag pointing to the root of a MuleSoft project.")
         
         xml_files = list(mule_dir.glob("**/*.xml"))
         if not xml_files:
@@ -102,7 +100,7 @@ class MuleFlowAnalyzer:
         
         mule_files = [f for f in xml_files if self._is_mule_file(f)]
         if not mule_files:
-            raise ValueError(f"No Mule configuration files found in {mule_dir}")
+            raise ValueError(f"Zero MuleSoft configuration files (XML file with a 'mule' element) were found in {mule_dir}")
 
     def _is_mule_file(self, file_path: Path) -> bool:
         try:
@@ -335,7 +333,7 @@ class MuleFlowAnalyzer:
             None
         """
         mule_flow_element = self.project_files[xml_file]
-        flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
+        flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows. Else, returns ALL FLOWS in the xml file that has a flow with the name matching the flow_name
 
         # Process all flows in the file
         if len(flows) > 0:
@@ -481,7 +479,7 @@ class MuleFlowAnalyzer:
         for xml_file, xml_content in self.project_files.items():
             if self.output_format == OutputFormat.TEXT:
                 # Print flow and sub-flow structures
-                self.print_flow_structures(xml_file)
+                self.print_flow_structures(xml_file, flow_name)
             elif self.output_format == OutputFormat.SEQUENCE:
                 self.generate_sequence_diagram(xml_file, flow_name)
 
@@ -513,11 +511,12 @@ class MuleFlowAnalyzer:
         mule_sequence_diagram_generator = SequenceDiagramGenerator(self.configuration_properties)
 
         for flow in flows:
+            logger.info(f"Processing sequence for flow: {flow.attributes.get('name')}")
             diagram_syntax = mule_sequence_diagram_generator.generate_sequence_diagram_syntax(flow)
             
+            logger.info(f"Rendering diagram for flow: {flow.attributes.get('name')}")
             image_file = mule_sequence_diagram_generator.render_image(diagram_syntax, flow.attributes.get('name'))
             
-            # Keep print for user feedback and add debug logging
             if image_file is not None:
                 logger.info(f"Generated diagram: {image_file}")
             

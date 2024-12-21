@@ -20,6 +20,12 @@ class MuleFlowElement:
                 raise ValueError("Tag cannot be empty or None")
             
             self.tag = tag
+            
+            # Clean up dataweave markers on strings
+            if attributes:
+                for key, value in attributes.items():
+                    if value.startswith('#[') and value.endswith(']') and ' ' not in value:
+                        attributes[key] = value[2:-1]
             self.attributes = attributes or {}
             self.children = children or []
             self.processes = processes or []
@@ -55,10 +61,7 @@ class MuleFlowElement:
             return f"<Error: {self.tag}>"
 
     def add_child(self, child: 'MuleFlowElement'):
-        try:
-            if not isinstance(child, MuleFlowElement):
-                raise TypeError(f"Child must be a MuleFlowElement, not {type(child)}")
-            
+        try:           
             self.children.append(child)
             logger.debug(f"Added child {child.tag} to {self.tag}")
             
@@ -67,10 +70,7 @@ class MuleFlowElement:
             raise
 
     def set_note(self, note: str):
-        try:
-            if not isinstance(note, str):
-                raise TypeError(f"Note must be a string, not {type(note)}")
-            
+        try:           
             self.notes = note
             logger.debug(f"Set note for {self.tag}")
             
@@ -79,10 +79,7 @@ class MuleFlowElement:
             raise
 
     def set_error_handler_ref(self, ref: str):
-        try:
-            if not isinstance(ref, str):
-                raise TypeError(f"Error handler reference must be a string, not {type(ref)}")
-            
+        try:           
             self.error_handler_ref = ref
             logger.debug(f"Set error handler reference for {self.tag}")
             

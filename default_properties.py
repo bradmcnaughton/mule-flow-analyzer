@@ -1,5 +1,8 @@
+from src.constants import OutputFormat
+
 DEFAULT_PROPERTIES = {
     'analyzer_properties': {
+        'output_type': OutputFormat.SEQUENCE,
         'plantuml': {
             'server': 'http://localhost:8087/',
             # Uncomment for prod - 
@@ -9,7 +12,10 @@ DEFAULT_PROPERTIES = {
         },
         'logging': {
             'level': 'INFO',
-            'file': './output/logs/mule_flow_analyzer.log'
+            'file': '/tmp/mfa-logs/mule_flow_analyzer.log',
+            #'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            # Uncomment for prod - 
+            'format': '%(asctime)s - %(levelname)s - %(message)s'
         },
         'tag_rules':{
             # List of Tags that will always be processors of their parent tag regardless of the tag's prefix
