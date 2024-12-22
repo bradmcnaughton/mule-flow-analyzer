@@ -7,4 +7,4 @@ PROPERTY_FILE_SELECTION_PROMPT = "Enter the numbers of the property files to use
 PROPERTY_HIERARCHY_CONFIRMATION = "Please Confirm Property File Hierarchy. (For Example, Prod First then Dev then Global):" 
 
 # Enum for the Output Format
-OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE'])
+OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE', 'NATURAL'])

@@ -1,7 +1,0 @@
-{
-    "cache_dir": "./.cache/plantweb",
-    "engine": "plantuml",
-    "format": "svg",
-    "server": "http://localhost:8087",
-    "use_cache": "true"
-}

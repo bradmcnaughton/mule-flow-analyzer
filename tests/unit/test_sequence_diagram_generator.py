@@ -7,7 +7,9 @@ import yaml
 from unittest.mock import patch, MagicMock
 from src.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
 from src.mule_flow_analyzer import MuleFlowAnalyzer
-from default_properties import DEFAULT_PROPERTIES
+from src.default_properties import DEFAULT_PROPERTIES
+from io import StringIO
+import sys
 
 class TestSequenceDiagramGenerator(unittest.TestCase):
     @classmethod
@@ -725,7 +727,59 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('loop Parallel For Each\\nCollection: vars.booty', uml_content)
         self.assertIn('"set-payload\\n[Set Payload]" -> "logger\\n[Booty Value]" : ', uml_content)
 
-    # TODO: Add test for text output
+    def test_analyzer_text_output(self):
+        """Test analyzer text output"""
+        flow_name = "control-flows-until-successful"
+        flow_source_file = "src\\main\\mule\\control-flows.xml"
+
+        from src.constants import OutputFormat
+        from io import StringIO
+        import sys
+
+        # Set output type to TEXT
+        self.analyzer_properties['analyzer_properties']['output_type'] = OutputFormat.TEXT
+        print(f"Output type set to: {self.analyzer_properties['analyzer_properties']['output_type']}")
+
+        # Update analyzer configuration
+        self.analyzer.set_configuration_properties(self.analyzer_properties)
+
+        # Assert the configuration was updated correctly
+        config = self.analyzer.get_configuration_properties()
+        self.assertEqual(config['analyzer_properties']['output_type'], OutputFormat.TEXT)
+
+        # Capture stdout
+        captured_output = StringIO()
+        output = ""
+
+        try:
+            sys.stdout = captured_output
+            self.analyzer.analyze_mule_flows(flow_name=flow_name)
+            output = captured_output.getvalue()
+        finally:
+            # Restore stdout
+            sys.stdout = sys.__stdout__
+
+        print(f"Captured output length: {len(output)}")
+        print(f"Captured output: {output}")
+
+        # Expected output structure
+        expected_output = """--------------------------------
+Flow: control-flows-until-successful
+--------------------------------
+flow [control-flows-until-successful]
+  sftp:listener [New Cattle Transcript Uploaded]
+  try [Try Getting Tunes]
+    try [Try Creating Request Arguments]
+      ee:transform [Create requestBody]
+    until-successful [Until Successful]
+      http:request [GET Cow Tunes]
+  ee:transform [Create Mixtape]
+  until-successful [Never Give Up]
+    anypoint-mq:publish [Publish Tracklist to Queue]
+"""
+
+        # Assert the output matches expected structure
+        self.assertEqual(output.strip(), expected_output.strip())
 
 if __name__ == '__main__':
     unittest.main()

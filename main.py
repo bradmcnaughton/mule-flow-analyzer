@@ -4,7 +4,7 @@ import yaml
 import logging
 from src.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
 from src.constants import OutputFormat
-from default_properties import DEFAULT_PROPERTIES
+from src.default_properties import DEFAULT_PROPERTIES
 from src.constants import DEFAULT_PROJECT_PATH, PROPERTY_FILE_SELECTION_PROMPT, PROPERTY_HIERARCHY_CONFIRMATION
 from src.exceptions import PropertyHierarchyError
 from __init__ import __version__

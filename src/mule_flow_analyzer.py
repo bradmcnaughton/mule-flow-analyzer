@@ -8,7 +8,7 @@ import yaml
 import re
 import copy
 import logging
-from default_properties import DEFAULT_PROPERTIES
+from src.default_properties import DEFAULT_PROPERTIES
 from src.constants import OutputFormat
 
 logger = logging.getLogger(__name__)
@@ -343,11 +343,13 @@ class MuleFlowAnalyzer:
                 depth = 0
 
                 current_flow_name = flow.attributes.get('name') or 'Unnamed Flow'
+                print('--------------------------------')
                 print(f"Flow: {current_flow_name}")
+                print('--------------------------------')
                 
                 # Print Element Structure (Regardless of output format)
                 self._print_element_structure(flow, depth)
-                
+            
                 print()  # Add a blank line after each flow for readability
             print()  # Add an extra blank line after processing all flows and sub-flows in this file
 
@@ -415,9 +417,6 @@ class MuleFlowAnalyzer:
         except Exception as e:
             logger.error(f"Error in flow reference processing: {str(e)}")
             raise
-
-    def _contains_placeholder(self, text):
-        return ('${' in text and '}' in text) or ('Mule::p(' in text) or ('p(' in text and ("'" in text or '"' in text))
 
     def _process_xml_structure_replace_placeholders(self, xml_string):
         def replace_placeholders(text):
@@ -520,3 +519,27 @@ class MuleFlowAnalyzer:
             if image_file is not None:
                 logger.info(f"Generated diagram: {image_file}")
             
+    def get_configuration_properties(self) -> dict:
+        """
+        Get the current configuration properties.
+
+        Returns:
+            dict: The current configuration properties
+        """
+        return self.configuration_properties
+
+    def set_configuration_properties(self, config: dict) -> None:
+        """
+        Set new configuration properties, merging with existing defaults.
+
+        Args:
+            config (dict): New configuration properties to merge with defaults
+
+        Returns:
+            None
+        """
+        self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, config)
+        # Update output format since it depends on configuration properties
+        self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
+
+    
