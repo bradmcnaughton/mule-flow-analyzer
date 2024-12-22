@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mulesoft-flow-analyzer"
+version = "1.0.0"
+authors = [
+    { name = "Brad McNaughton", email = "hello@bradmcnaughton.com" }
+]
+description = "A tool for analyzing MuleSoft integration projects to generate sequence diagrams or natural language descriptions of each flow"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "xmltodict",
+    "pyyaml",
+    "plantweb",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/bradmcnaughton/mulesoft-flow-analyzer"
+"Bug Tracker" = "https://github.com/bradmcnaughton/mulesoft-flow-analyzer/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mulesoft_flow_analyzer*"]

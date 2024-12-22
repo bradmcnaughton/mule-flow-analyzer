@@ -5,11 +5,12 @@ import shutil
 import random
 import yaml
 from unittest.mock import patch, MagicMock
-from src.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
-from src.mule_flow_analyzer import MuleFlowAnalyzer
-from src.default_properties import DEFAULT_PROPERTIES
+from src.mulesoft_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
+from src.mulesoft_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
+from src.mulesoft_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
 from io import StringIO
 import sys
+from src.mulesoft_flow_analyzer.config.constants import OutputFormat
 
 class TestSequenceDiagramGenerator(unittest.TestCase):
     @classmethod
@@ -731,10 +732,6 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         """Test analyzer text output"""
         flow_name = "control-flows-until-successful"
         flow_source_file = "src\\main\\mule\\control-flows.xml"
-
-        from src.constants import OutputFormat
-        from io import StringIO
-        import sys
 
         # Set output type to TEXT
         self.analyzer_properties['analyzer_properties']['output_type'] = OutputFormat.TEXT

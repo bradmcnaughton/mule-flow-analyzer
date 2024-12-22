@@ -1,5 +1,5 @@
 import unittest
-from src.mule_flow_element import MuleFlowElement
+from src.mulesoft_flow_analyzer.analyzer.mule_flow_element import MuleFlowElement
 
 class TestMuleFlowElement(unittest.TestCase):
     def setUp(self):

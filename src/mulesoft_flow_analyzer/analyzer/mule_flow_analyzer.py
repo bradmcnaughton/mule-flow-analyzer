@@ -8,11 +8,12 @@ import yaml
 import re
 import copy
 import logging
-from src.default_properties import DEFAULT_PROPERTIES
-from src.constants import OutputFormat
+from ..config.default_properties import DEFAULT_PROPERTIES
+from ..config.constants import OutputFormat
+from .mule_flow_element import MuleFlowElement
+from .sequence_diagram_generator import SequenceDiagramGenerator
 
 logger = logging.getLogger(__name__)
-from src.mule_flow_element import MuleFlowElement
 
 # Type for the Property Files Hierarchy
 PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
@@ -506,7 +507,6 @@ class MuleFlowAnalyzer:
         mule_flow_element = self.project_files[xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
-        from src.sequence_diagram_generator import SequenceDiagramGenerator
         mule_sequence_diagram_generator = SequenceDiagramGenerator(self.configuration_properties)
 
         for flow in flows:

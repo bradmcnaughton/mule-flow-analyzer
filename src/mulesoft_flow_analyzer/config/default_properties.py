@@ -1,4 +1,4 @@
-from src.constants import OutputFormat
+from .constants import OutputFormat
 
 DEFAULT_PROPERTIES = {
     'analyzer_properties': {

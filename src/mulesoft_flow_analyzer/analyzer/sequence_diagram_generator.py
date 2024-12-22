@@ -1,9 +1,9 @@
 import os
 import re
-from src.mule_flow_analyzer import MuleFlowElement
 import logging
 import traceback
 from typing import Dict, List, Optional, Tuple, Any
+from .mule_flow_element import MuleFlowElement
 
 logger = logging.getLogger(__name__)
 
