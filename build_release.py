@@ -133,6 +133,10 @@ def update_version(current_version):
 
 def build_packages():
     """Build wheel file"""
+    print("\nCleaning old build artifacts...")
+    for path in ['build', 'dist', '*.egg-info']:
+        run_command([str(VENV_PYTHON), '-c', f'import shutil, glob; [shutil.rmtree(p, ignore_errors=True) for p in glob.glob("{path}")]'])
+    
     print("\nBuilding wheel file...")
     run_command([str(VENV_PYTHON), '-m', 'pip', 'install', 'build'])
     run_command([str(VENV_PYTHON), '-m', 'build'])
