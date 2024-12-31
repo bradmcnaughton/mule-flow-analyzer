@@ -30,7 +30,44 @@ except:
 
 class MuleFlowAnalyzer:
     
-    def __init__(self, project_path: str, property_files: PropertyHierarchy = None, user_config: dict = None):
+    def __init__(self, project_path: str = None, property_files: PropertyHierarchy = None, user_config: dict = None):
+        """
+        Initialize a MuleFlowAnalyzer instance for analyzing MuleSoft projects.
+
+        This constructor sets up the analyzer with project configuration, property files,
+        and user-defined settings. It can handle both complete project initialization
+        and deferred initialization where paths and properties are set later.
+
+        Args:
+            project_path (str, optional): Path to the root of the MuleSoft project.
+                                        If provided, initializes project files and properties.
+            property_files (PropertyHierarchy, optional): Dictionary mapping priority (int) to
+                                                        property file paths (str) relative to
+                                                        src/main/resources/.
+            user_config (dict, optional): Custom configuration to override default properties.
+                                        Will be merged with DEFAULT_PROPERTIES.
+
+        Attributes:
+            project_path (str): Root path of the MuleSoft project
+            project_files (dict): Dictionary of discovered Mule configuration files
+            properties_hierarchy (PropertyHierarchy): Ordered hierarchy of property files
+            configuration_properties (dict): Merged default and user configuration
+            output_format (OutputFormat): Format for analysis output (sequence/text)
+            debug_xml (bool): Flag for XML debugging
+            debug_options (dict): Debugging configuration options
+
+        Note:
+            - If project_path is provided, validates project structure and discovers files
+            - Property files are processed in order of their hierarchy index
+            - Default properties can be found in DEFAULT_PROPERTIES
+
+        Example:
+            >>> analyzer = MuleFlowAnalyzer(
+            ...     project_path="path/to/project",
+            ...     property_files={0: "properties/dev.yaml", 1: "properties/common.properties"},
+            ...     user_config={"analyzer_properties": {"output_type": "TEXT"}}
+            ... )
+        """
         self.project_path = project_path
         self.project_files = {}
         self.properties_hierarchy = PropertyHierarchy({})
@@ -58,15 +95,98 @@ class MuleFlowAnalyzer:
         # Tags to skip when printing the flow structure
         self.skip_tags = ["flow-ref", "logger", "tracing:set-logging-variable"]
 
+        # Validate and discover project files if project_path is provided
+        if project_path is not None:
+            self._validate_project_path()
+            self._discover_project_files()
+
+            # If property_files is provided, validate using set_properties_hierarchy
+            # Otherwise, discover the properties files and use all in order
+            if property_files:
+                self.set_properties_hierarchy(property_files)
+            else:
+                self._populate_properties_hierarchy()
+
+    def set_project_path(self, project_path: str):
+        """
+        Set or update the MuleSoft project path and initialize project resources.
+
+        This method allows for deferred or updated project path initialization. It validates
+        the project structure, discovers Mule configuration files, and processes property files.
+
+        Args:
+            project_path (str): Path to the root of the MuleSoft project directory.
+                              Must contain a valid src/main/mule structure.
+
+        Raises:
+            ValueError: If the project path is invalid or missing required structure.
+
+        Note:
+            - Automatically discovers and processes property files if no hierarchy is set
+            - Re-validates property hierarchy if one was previously set
+            - Updates internal project files cache
+
+        Example:
+            >>> analyzer = MuleFlowAnalyzer()
+            >>> analyzer.set_project_path("/path/to/mule/project")
+        """
+        self.project_path = project_path
+        
+        logger.info(f"Setting project path to: {self.project_path}")
+        
         self._validate_project_path()
         self._discover_project_files()
 
-        # If property_files is provided, validate using set_properties_hierarchy
-        # Otherwise, discover the properties files and use all in order
-        if property_files:
-            self.set_properties_hierarchy(property_files)
+        if self.properties_hierarchy:
+            self.set_properties_hierarchy(self.properties_hierarchy)
         else:
             self._populate_properties_hierarchy()
+
+    def set_properties_hierarchy(self, property_files: PropertyHierarchy):
+        """
+        Set or update the hierarchy of property files for placeholder resolution.
+
+        This method establishes the order in which property files are processed when
+        resolving property placeholders in Mule configuration files. Files are processed
+        in order of their integer key in the hierarchy.
+
+        Args:
+            property_files (PropertyHierarchy): Dictionary mapping priority (int) to
+                                              property file paths (str) relative to
+                                              src/main/resources/.
+
+        Raises:
+            ValueError: If any property file in the hierarchy doesn't exist or isn't readable
+                       when project_path is set.
+
+        Note:
+            - Lower integer keys have higher priority in property resolution
+            - Property files can be either .properties or .yaml format
+            - All paths should be relative to src/main/resources
+            - If project_path is not set, only stores the hierarchy without validation
+        """
+        # Store the hierarchy regardless of project_path
+        self.properties_hierarchy = property_files
+        logger.info(f"Setting properties hierarchy to: {self.properties_hierarchy}")
+
+        # Skip validation if project_path is not set
+        if self.project_path is None:
+            logger.debug("Project path not set, skipping property file validation")
+            return
+
+        # Now that we know project_path is set, proceed with validation
+        resources_dir = Path(self.project_path) / "src" / "main" / "resources"
+        
+        # Validate all property files exist and are readable
+        for index, file_path in property_files.items():
+            full_path = resources_dir / file_path
+            if not full_path.is_file():
+                raise ValueError(f"Property file not found: {full_path}")
+            if not os.access(full_path, os.R_OK):
+                raise ValueError(f"Property file is not readable: {full_path}")
+        
+        # Trigger property discovery if project path is set
+        self._discover_properties_keys()
 
     def _recursive_merge(self, defaults, overrides):
         """
@@ -215,7 +335,20 @@ class MuleFlowAnalyzer:
             else:
                 raise ValueError("No 'mule' element found in the XML.")
 
-    def _populate_properties_hierarchy(self):
+    def _populate_properties_hierarchy(self, property_files: PropertyHierarchy = None):
+        """
+        Populate the properties hierarchy with either provided files or by discovering them.
+
+        Args:
+            property_files (PropertyHierarchy, optional): If provided, use these property files.
+                                                        If None, discover all property files.
+        """
+        if property_files is not None:
+            # Use the provided property files
+            self.properties_hierarchy = property_files
+            return
+
+        # Auto-discover property files if none provided
         resources_dir = Path(self.project_path) / "src" / "main" / "resources"
 
         # Ensure properties_hierarchy is initialized
@@ -232,6 +365,7 @@ class MuleFlowAnalyzer:
     def get_properties_hierarchy(self) -> PropertyHierarchy:
         return self.properties_hierarchy
 
+    """
     def set_properties_hierarchy(self, property_files: PropertyHierarchy):
         resources_dir = Path(self.project_path) / "src" / "main" / "resources"
         
@@ -243,6 +377,7 @@ class MuleFlowAnalyzer:
                 raise ValueError(f"Property file is not readable: {full_path}")
         
         self.properties_hierarchy = property_files
+    """
 
     def _discover_properties_keys(self):
         try:
@@ -286,6 +421,30 @@ class MuleFlowAnalyzer:
             raise
 
     def _flatten_dict(self, d, parent_key='', sep='.'):
+        """
+        Recursively flatten a nested dictionary into a single-level dictionary with dot-notation keys.
+
+        This method is particularly useful for processing YAML configuration files where nested
+        structures need to be converted to a flat key-value format similar to .properties files.
+
+        Args:
+            d (dict): The dictionary to flatten
+            parent_key (str, optional): The parent key to prepend to child keys. Defaults to empty string.
+            sep (str, optional): The separator to use between nested keys. Defaults to '.'
+
+        Returns:
+            dict: A flattened dictionary where nested keys are joined with the separator
+
+        Example:
+            >>> nested = {'a': {'b': 1, 'c': {'d': 2}}, 'e': 3}
+            >>> analyzer._flatten_dict(nested)
+            {'a.b': 1, 'a.c.d': 2, 'e': 3}
+
+        Note:
+            - Keys in the flattened dictionary maintain their hierarchy through dot notation
+            - This is commonly used to convert YAML property files to a format compatible with
+              MuleSoft's property placeholder resolution
+        """
         items = []
         for k, v in d.items():
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -296,6 +455,28 @@ class MuleFlowAnalyzer:
         return dict(items)
 
     def _prepare_analysis_xml(self, flow_name: str = None):
+        """
+        Prepare XML files for analysis by processing property placeholders and filtering content.
+
+        This method performs two main tasks:
+        1. Discovers and processes all property files in the project
+        2. Replaces property placeholders in XML files with their actual values
+        3. Optionally filters XML content to only include files containing a specific flow
+
+        Args:
+            flow_name (str, optional): If provided, only XML files containing this flow name
+                                     will be processed. If None, all XML files are processed.
+
+        Note:
+            - Property placeholders can be in formats: ${property}, Mule::p(property), or p('property')
+            - The method updates self.project_files in place, setting non-matching files to None
+            - Property files are processed in order according to self.properties_hierarchy
+
+        Example:
+            >>> analyzer = MuleFlowAnalyzer("path/to/project")
+            >>> analyzer._prepare_analysis_xml("my-flow")  # Process only files with "my-flow"
+            >>> analyzer._prepare_analysis_xml()  # Process all XML files
+        """
         # Process the supplied properties files and get all keys
         self._discover_properties_keys()
 
@@ -470,6 +651,7 @@ class MuleFlowAnalyzer:
         self._prepare_analysis_xml(flow_name)
 
         if flow_name is not None:
+            logger.info(f"Analyzing specific flow only: {flow_name}")
             # Remove any None values from project_files
             self.project_files = {k: v for k, v in self.project_files.items() if v is not None}
 

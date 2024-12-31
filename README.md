@@ -11,7 +11,7 @@ Depending on your output format, text files and/or diagrams will be generated wi
 The library is available as a pip package from a private repository.
 
 ```bash
-pip install https://{GIT_ACCESS_TOKEN}@raw.githubusercontent.com/bradmcnaughton/private-python-packages/main/mulesoft-flow-analyzer/1.0.0/mulesoft_flow_analyzer-1.0.0-py3-none-any.whl
+pip install https://{GIT_ACCESS_TOKEN}@raw.githubusercontent.com/bradmcnaughton/private-python-packages/main/mulesoft-flow-analyzer/1.1.0/mulesoft_flow_analyzer-1.1.0-py3-none-any.whl
 ```
 
 An CLI implementing the library is at https://github.com/bradmcnaughton/mulesoft-flow-analyzer-cli

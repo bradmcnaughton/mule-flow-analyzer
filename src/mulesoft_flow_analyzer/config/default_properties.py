@@ -43,7 +43,8 @@ DEFAULT_PROPERTIES = {
         # Default Scale
         # Without a scale, diagrams can get cut off
         # Using "max" will scale only when necessary
-        'scale': 'scale max 4096 width',
+        # 4096 is the max width for PlantUML, but seems to truncate at that value, so we'll use 4000
+        'scale': 'scale max 4000 width',
         # Don't prefix colors with #. E.G. #DD1122 should be DD1122
         # English names can be found here: https://plantuml.com/en/color
         # Gradients should be specified as color1(/|\-)color2 without hashes. E.G. LightBlue-6FBBD3
