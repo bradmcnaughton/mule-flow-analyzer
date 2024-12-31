@@ -6,7 +6,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="mulesoft-flow-analyzer",
-    version="1.1.2",
+    version="1.1.3",
     author="Brad McNaughton",
     author_email="hello@bradmcnaughton.com",
     description="A tool for analyzing MuleSoft integration projects to generate sequence diagrams or natural language descriptions of each flow",

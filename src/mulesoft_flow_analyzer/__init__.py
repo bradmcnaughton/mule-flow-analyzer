@@ -11,7 +11,7 @@ from .analyzer.mule_flow_element import MuleFlowElement
 from .config.default_properties import DEFAULT_PROPERTIES
 from .config.constants import OutputFormat
 
-__version__ = '1.1.2'
+__version__ = '1.1.3'
 
 __all__ = [
     'MuleFlowAnalyzer',
