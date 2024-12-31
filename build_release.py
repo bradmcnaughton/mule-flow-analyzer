@@ -132,13 +132,10 @@ def update_version(current_version):
     return new_version
 
 def build_packages():
-    """Build wheel and exe files"""
+    """Build wheel file"""
     print("\nBuilding wheel file...")
     run_command([str(VENV_PYTHON), '-m', 'pip', 'install', 'build'])
     run_command([str(VENV_PYTHON), '-m', 'build'])
-
-    print("\nBuilding exe file...")
-    run_command([str(VENV_PYTHON), '-m', 'PyInstaller', 'mulesoft-flow-analyzer.spec'])
 
 def copy_wheel_to_private_repo(version):
     """Copy wheel file to private packages repository"""
