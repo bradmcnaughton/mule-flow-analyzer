@@ -44,6 +44,10 @@ Alternatively, use the `-s` argument to specify the server address and port when
 
 For detailed configuration options, see [Configuration Documentation](docs/configuration.md).
 
+## Instructions for LLMs
+
+LLMs can be shown the [python usage instructions](docs/python_usage.md) to help them generate code.
+
 ## Troubleshooting
 
 If you encounter an error, check the log file for more information. The log file is located at the path specified in the configuration file (default is /tmp/mfa-logs/mule_flow_analyzer.log).
