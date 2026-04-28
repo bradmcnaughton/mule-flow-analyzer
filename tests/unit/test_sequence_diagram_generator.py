@@ -3,14 +3,15 @@ from pathlib import Path
 import os
 import shutil
 import random
+import copy
 import yaml
 from unittest.mock import patch, MagicMock
-from src.mulesoft_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
-from src.mulesoft_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
-from src.mulesoft_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
+from mule_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
+from mule_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
+from mule_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
 from io import StringIO
 import sys
-from src.mulesoft_flow_analyzer.config.constants import OutputFormat
+from mule_flow_analyzer.config.constants import OutputFormat
 
 class TestSequenceDiagramGenerator(unittest.TestCase):
     @classmethod
@@ -20,8 +21,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         cls.output_dir = Path('tests/output/plantuml')
         cls.log_dir = Path('tests/output/logs')
         
-        # Overwrite Default Properties with some testing specific properties
-        test_properties = DEFAULT_PROPERTIES
+        # Isolated copy so tests do not mutate the module-level DEFAULT_PROPERTIES
+        test_properties = copy.deepcopy(DEFAULT_PROPERTIES)
         test_properties['analyzer_properties']['plantuml']['output_directory'] = cls.output_dir
         test_properties['analyzer_properties']['logging']['file'] = cls.log_dir / 'test_mule_flow_analyzer.log'
 
@@ -192,6 +193,9 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         Returns:
             - List of UML content lines
         """
+        # Keep analyzer in sync with class-level analyzer_properties (e.g. verbose.logging toggles)
+        self.analyzer.set_configuration_properties(self.analyzer_properties)
+
         # Get the flow from the source files
         self.analyzer.analyze_mule_flows(flow_name=flow_name)
 
@@ -777,6 +781,49 @@ flow [control-flows-until-successful]
 
         # Assert the output matches expected structure
         self.assertEqual(output.strip(), expected_output.strip())
+
+    def test_renderer_mode_defaults_to_server_for_backwards_compatibility(self):
+        """If mode is omitted, rendering should default to server mode."""
+        config_without_mode = copy.deepcopy(self.analyzer_properties)
+        config_without_mode['analyzer_properties']['plantuml'].pop('mode', None)
+        generator = SequenceDiagramGenerator(configuration_properties=config_without_mode)
+        self.assertEqual(generator._detect_renderer_mode(), 'server')
+
+    def test_renderer_mode_validation_rejects_invalid_mode(self):
+        """Invalid PlantUML mode should raise ConfigurationError."""
+        invalid_mode_config = copy.deepcopy(self.analyzer_properties)
+        invalid_mode_config['analyzer_properties']['plantuml']['mode'] = 'invalid-mode'
+        generator = SequenceDiagramGenerator(configuration_properties=invalid_mode_config)
+        with self.assertRaises(ConfigurationError):
+            generator._detect_renderer_mode()
+
+    def test_render_image_dispatches_based_on_mode(self):
+        """render_image should dispatch to the correct renderer backend."""
+        syntax = ["@startuml", "Alice -> Bob : hello", "@enduml"]
+
+        for mode, expected_backend in [('server', '_render_with_server'), ('jar', '_render_with_jar'), ('cli', '_render_with_cli')]:
+            with self.subTest(mode=mode):
+                config = copy.deepcopy(self.analyzer_properties)
+                config['analyzer_properties']['plantuml']['mode'] = mode
+                config['analyzer_properties']['plantuml']['output_directory'] = self.output_dir
+                generator = SequenceDiagramGenerator(configuration_properties=config)
+                fake_outfile = str(self.output_dir / f"{mode}.png")
+
+                with patch.object(generator, '_render_with_server', return_value=fake_outfile) as mock_server, \
+                     patch.object(generator, '_render_with_jar', return_value=fake_outfile) as mock_jar, \
+                     patch.object(generator, '_render_with_cli', return_value=fake_outfile) as mock_cli:
+                    result = generator.render_image(syntax, f"dispatch-{mode}")
+                    self.assertEqual(result, fake_outfile)
+
+                    called = {
+                        '_render_with_server': mock_server.called,
+                        '_render_with_jar': mock_jar.called,
+                        '_render_with_cli': mock_cli.called
+                    }
+                    self.assertTrue(called[expected_backend], f"{expected_backend} should be called for mode={mode}")
+                    for backend, was_called in called.items():
+                        if backend != expected_backend:
+                            self.assertFalse(was_called, f"{backend} should not be called for mode={mode}")
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,10 +2,16 @@ import os
 import re
 import logging
 import traceback
+import shutil
+import subprocess
 from typing import Dict, List, Optional, Tuple, Any
 from .mule_flow_element import MuleFlowElement
+from ..exceptions import ConfigurationError, RenderingError, DiagramGenerationException
 
 logger = logging.getLogger(__name__)
+
+# Re-export for callers that imported these from this module
+DiagramGenerationError = DiagramGenerationException
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
@@ -16,18 +22,6 @@ class ArrowType:
         self.label = label
         self.arrow = arrow 
         self.priority = priority
-
-class DiagramGenerationError(Exception):
-    """Base exception for diagram generation errors"""
-    pass
-
-class RenderingError(DiagramGenerationError):
-    """Raised when diagram rendering fails"""
-    pass
-
-class ConfigurationError(DiagramGenerationError):
-    """Raised when configuration is invalid"""
-    pass
 
 class SequenceDiagramGenerator:
     def __init__(self, configuration_properties: Dict[str, Any]) -> None:
@@ -357,8 +351,7 @@ class SequenceDiagramGenerator:
                         if element.tag == 'round-robin':
                             content.append(f"else Round Robin Next Target")
                         else:
-                            content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', "else"))}")
-                        content.append('\'Rest of Choice goes here')
+                            content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', 'else'))}")
                         content = process_element(choice, content, tracking_vars)
                     # Reset the previous actor to the choice actor
                     
@@ -452,15 +445,15 @@ class SequenceDiagramGenerator:
                     if loop_element.tag in ['foreach', 'parallel-foreach']:
                         content.append(f"loop {loop_element.attributes.get('documentation:name')}\\nCollection: {loop_element.attributes.get('collection', '')}")
                     elif loop_element.tag == 'until-successful':
-                        until_successful_statment = "loop "
+                        until_successful_statement = "loop "
                         if 'until successful' in loop_element.attributes.get('documentation:name', '').lower(): 
-                            until_successful_statment += loop_element.attributes.get('documentation:name')
+                            until_successful_statement += loop_element.attributes.get('documentation:name')
                         else:
-                            until_successful_statment += "Until Successful - " + loop_element.attributes.get('documentation:name')
+                            until_successful_statement += "Until Successful - " + loop_element.attributes.get('documentation:name')
                         
                         if loop_element.attributes.get('maxRetries', None):
-                            until_successful_statment += f" max retries: {loop_element.attributes.get('maxRetries')}"
-                        content.append(until_successful_statment)
+                            until_successful_statement += f" max retries: {loop_element.attributes.get('maxRetries')}"
+                        content.append(until_successful_statement)
                             
                     # Unset the loop event source
                     tracking_vars['loop_event_source'] = None
@@ -844,8 +837,113 @@ class SequenceDiagramGenerator:
         """
         return re.sub(r'[^a-zA-Z0-9_-]', '_', flow_name)
 
-    def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
+    def _detect_renderer_mode(self) -> str:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        mode = plantuml_properties.get('mode')
+
+        # Backwards compatibility: if mode is omitted, default to server behavior.
+        if not mode:
+            return 'server'
+
+        mode = str(mode).strip().lower()
+        if mode not in ('server', 'jar', 'cli'):
+            raise ConfigurationError(
+                f"Invalid PlantUML mode '{mode}'. Supported modes are: server, jar, cli."
+            )
+        return mode
+
+    def _render_with_server(self, infile: str, outfile: str) -> Optional[str]:
         from plantweb.render import render_file
+
+        return render_file(
+            infile=infile,
+            outfile=outfile,
+            renderopts={
+                "engine": "plantuml",
+                "format": self.properties['analyzer_properties']['plantuml']['format'],
+                "server": self.properties['analyzer_properties']['plantuml']['server']
+            },
+            cacheopts={
+                "use_cache": False
+            }
+        )
+
+    def _render_with_jar(self, infile: str, outfile: str) -> Optional[str]:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        jar_path = plantuml_properties.get('jar_path')
+        if not jar_path:
+            raise ConfigurationError(
+                "PlantUML mode 'jar' requires analyzer_properties.plantuml.jar_path."
+            )
+
+        java_command = plantuml_properties.get('java_command', 'java')
+        jar_path = os.path.abspath(jar_path)
+        output_dir = os.path.dirname(outfile)
+        output_format = plantuml_properties['format']
+
+        if shutil.which(java_command) is None:
+            raise RenderingError(
+                f"Java command '{java_command}' not found. Install Java or configure analyzer_properties.plantuml.java_command."
+            )
+        if not os.path.isfile(jar_path):
+            raise RenderingError(f"PlantUML jar not found at: {jar_path}")
+
+        cmd = [
+            java_command,
+            "-jar",
+            jar_path,
+            f"-t{output_format}",
+            "-charset",
+            "UTF-8",
+            "-o",
+            output_dir,
+            infile,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            raise RenderingError(
+                f"PlantUML jar rendering failed (exit code {result.returncode}): {stderr}"
+            )
+
+        if not os.path.exists(outfile):
+            raise RenderingError(f"PlantUML jar did not produce expected output: {outfile}")
+        return outfile
+
+    def _render_with_cli(self, infile: str, outfile: str) -> Optional[str]:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        cli_command = plantuml_properties.get('cli_command', 'plantuml')
+        output_dir = os.path.dirname(outfile)
+        output_format = plantuml_properties['format']
+
+        if shutil.which(cli_command) is None:
+            raise RenderingError(
+                f"PlantUML CLI command '{cli_command}' not found. Install PlantUML CLI or configure analyzer_properties.plantuml.cli_command."
+            )
+
+        cmd = [
+            cli_command,
+            f"-t{output_format}",
+            "-charset",
+            "UTF-8",
+            "-o",
+            output_dir,
+            infile,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            raise RenderingError(
+                f"PlantUML CLI rendering failed (exit code {result.returncode}): {stderr}"
+            )
+
+        if not os.path.exists(outfile):
+            raise RenderingError(f"PlantUML CLI did not produce expected output: {outfile}")
+        return outfile
+
+    def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
         plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
         # Remove special characters from flow_name
@@ -865,21 +963,23 @@ class SequenceDiagramGenerator:
         except IOError as e:
             raise RenderingError(f"Failed to write diagram file: {e}")
 
+        outfile_path = os.path.join(
+            plantuml_output_directory,
+            f"{flow_name_file_name}.{self.properties['analyzer_properties']['plantuml']['format']}"
+        )
+
         try:
-            outfile = render_file(
-                infile=infile,
-                outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.{self.properties['analyzer_properties']['plantuml']['format']}"),
-                renderopts={
-                    "engine": "plantuml", 
-                    "format": self.properties['analyzer_properties']['plantuml']['format'],
-                    "server": self.properties['analyzer_properties']['plantuml']['server']
-                },
-                cacheopts={
-                    "use_cache": False
-                }
-            )
+            mode = self._detect_renderer_mode()
+            if mode == 'server':
+                outfile = self._render_with_server(infile, outfile_path)
+            elif mode == 'jar':
+                outfile = self._render_with_jar(infile, outfile_path)
+            else:
+                outfile = self._render_with_cli(infile, outfile_path)
         except Exception as e:
-            logger.error(f"Error rendering diagram for flow {flow_name}. Plant UML may be unreachable or down. Syntax saved to {infile}.")
+            logger.error(
+                f"Error rendering diagram for flow {flow_name}. Syntax saved to {infile}."
+            )
             logger.debug(f"{str(e)}")
             logger.debug(f"{traceback.format_exc()}")
             return None

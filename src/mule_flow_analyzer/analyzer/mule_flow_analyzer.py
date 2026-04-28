@@ -3,7 +3,7 @@ import os
 import xmltodict
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, NewType
+from typing import Dict, NewType, Optional
 import yaml
 import re
 import copy
@@ -20,26 +20,26 @@ PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
 
 try:
     ALWAYS_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('always_processors', [])
-except:
+except Exception:
     ALWAYS_PROCESSOR_TAGS = []
 
 try:
     NEVER_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('never_processors', [])
-except:
+except Exception:
     NEVER_PROCESSOR_TAGS = []
 
 class MuleFlowAnalyzer:
     
     def __init__(self, project_path: str = None, property_files: PropertyHierarchy = None, user_config: dict = None):
         """
-        Initialize a MuleFlowAnalyzer instance for analyzing MuleSoft projects.
+        Initialize a MuleFlowAnalyzer instance for analyzing Mule projects.
 
         This constructor sets up the analyzer with project configuration, property files,
         and user-defined settings. It can handle both complete project initialization
         and deferred initialization where paths and properties are set later.
 
         Args:
-            project_path (str, optional): Path to the root of the MuleSoft project.
+            project_path (str, optional): Path to the root of the Mule project.
                                         If provided, initializes project files and properties.
             property_files (PropertyHierarchy, optional): Dictionary mapping priority (int) to
                                                         property file paths (str) relative to
@@ -48,7 +48,7 @@ class MuleFlowAnalyzer:
                                         Will be merged with DEFAULT_PROPERTIES.
 
         Attributes:
-            project_path (str): Root path of the MuleSoft project
+            project_path (str): Root path of the Mule project
             project_files (dict): Dictionary of discovered Mule configuration files
             properties_hierarchy (PropertyHierarchy): Ordered hierarchy of property files
             configuration_properties (dict): Merged default and user configuration
@@ -87,7 +87,7 @@ class MuleFlowAnalyzer:
         if user_config:
             self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
         else:
-            self.configuration_properties = DEFAULT_PROPERTIES
+            self.configuration_properties = copy.deepcopy(DEFAULT_PROPERTIES)
 
         # Output Type Flag - will be replaced with actual input flag later
         self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
@@ -109,13 +109,13 @@ class MuleFlowAnalyzer:
 
     def set_project_path(self, project_path: str):
         """
-        Set or update the MuleSoft project path and initialize project resources.
+        Set or update the Mule project path and initialize project resources.
 
         This method allows for deferred or updated project path initialization. It validates
         the project structure, discovers Mule configuration files, and processes property files.
 
         Args:
-            project_path (str): Path to the root of the MuleSoft project directory.
+            project_path (str): Path to the root of the Mule project directory.
                               Must contain a valid src/main/mule structure.
 
         Raises:
@@ -213,7 +213,7 @@ class MuleFlowAnalyzer:
         
         mule_dir = path / "src" / "main" / "mule"
         if not mule_dir.is_dir():
-            raise ValueError(f"Invalid MuleSoft project structure. Missing src/main/mule directory at: {path}. Ensure the utility is run from the root of the MuleSoft project, or with the -p flag pointing to the root of a MuleSoft project.")
+            raise ValueError(f"Invalid Mule project structure. Missing src/main/mule directory at: {path}. Ensure the utility is run from the root of the Mule project, or with the -p flag pointing to the root of a Mule project.")
         
         xml_files = list(mule_dir.glob("**/*.xml"))
         if not xml_files:
@@ -221,7 +221,7 @@ class MuleFlowAnalyzer:
         
         mule_files = [f for f in xml_files if self._is_mule_file(f)]
         if not mule_files:
-            raise ValueError(f"Zero MuleSoft configuration files (XML file with a 'mule' element) were found in {mule_dir}")
+            raise ValueError(f"Zero Mule configuration files (XML file with a 'mule' element) were found in {mule_dir}")
 
     def _is_mule_file(self, file_path: Path) -> bool:
         try:
@@ -252,7 +252,7 @@ class MuleFlowAnalyzer:
 
     # Recursive Helper Function to convert XML Text to a MuleFlowElement
     def xml_to_mule_flow_element(self, xml_string):
-        def create_mule_flow_element(element: ET.Element) -> MuleFlowElement | None:
+        def create_mule_flow_element(element: ET.Element) -> Optional[MuleFlowElement]:
             def process_tag_or_attribute(name):
                 parts = name.split('}')
                 if len(parts) > 1:
@@ -282,7 +282,8 @@ class MuleFlowAnalyzer:
             processes = []
 
             for child in element:
-                if len(child) > 0 or not child.get('attributes', None) or len(child.get('text', '').strip()) > 0:
+                text_stripped = (child.text or '').strip()
+                if len(child) > 0 or bool(child.attrib) or text_stripped:
                     new_child = create_mule_flow_element(child)
                     if new_child is not None:
 
@@ -299,18 +300,22 @@ class MuleFlowAnalyzer:
                         else:
                             children.append(new_child)
 
-            # Check if the element has an error-handler
+            # Check if the element has an error-handler (only the first is lifted out; rest stay)
             error_handler_ref = None
             error_handler_element = None
+            pruned_children = []
+            first_error_handler_only = True
             for child in children:
-                if child.tag == 'error-handler':
+                if child.tag == 'error-handler' and first_error_handler_only:
+                    first_error_handler_only = False
                     if child.attributes.get('ref', None):
                         error_handler_ref = child.attributes.get('ref')
                     elif len(child.children) > 0:
                         error_handler_ref = "Inline Error Handler"
                         error_handler_element = child
-                    children.remove(child)
-                    break
+                    continue
+                pruned_children.append(child)
+            children = pruned_children
             
             if element.text and element.text.strip():
                 content = element.text.strip()
@@ -364,20 +369,6 @@ class MuleFlowAnalyzer:
 
     def get_properties_hierarchy(self) -> PropertyHierarchy:
         return self.properties_hierarchy
-
-    """
-    def set_properties_hierarchy(self, property_files: PropertyHierarchy):
-        resources_dir = Path(self.project_path) / "src" / "main" / "resources"
-        
-        for index, file_path in property_files.items():
-            full_path = resources_dir / file_path
-            if not full_path.is_file():
-                raise ValueError(f"Property file not found: {full_path}")
-            if not os.access(full_path, os.R_OK):
-                raise ValueError(f"Property file is not readable: {full_path}")
-        
-        self.properties_hierarchy = property_files
-    """
 
     def _discover_properties_keys(self):
         try:
@@ -443,8 +434,10 @@ class MuleFlowAnalyzer:
         Note:
             - Keys in the flattened dictionary maintain their hierarchy through dot notation
             - This is commonly used to convert YAML property files to a format compatible with
-              MuleSoft's property placeholder resolution
+              Mule-style property placeholder resolution
         """
+        if d is None or not isinstance(d, dict):
+            return {}
         items = []
         for k, v in d.items():
             new_key = f"{parent_key}{sep}{k}" if parent_key else k

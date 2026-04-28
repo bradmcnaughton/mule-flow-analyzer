@@ -1,5 +1,5 @@
 """
-Analyzer module for MuleSoft Flow Analyzer.
+Analyzer module for Mule Flow Analyzer.
 
 This module contains the core analysis functionality including the flow analyzer,
 flow element representation, and sequence diagram generation.

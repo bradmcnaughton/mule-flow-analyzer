@@ -2,7 +2,7 @@
 
 Overriding configuration options is possible with a YAML file. The following example shows all possible options being overriden. None are mandatory. Only include what you want to override.
 
-Typically the most common options to override are the PlantUML server address and port, and the logging directory.
+Typically the most common options to override are the PlantUML renderer mode/server settings and the log file path (`analyzer_properties.logging.file`). The default log file path is relative to the current working directory when the process starts.
 
 Depending on your implementation, the tag_rules may be useful to override if processors are being treated as participants or not.
 
@@ -17,12 +17,16 @@ Gradients should be specified as color1(/|\-)color2 without hashes. E.G. `LightB
 ```yaml
 analyzer_properties:
   plantuml:
+    mode: "server" # "server" (HTTP), "jar" (local java -jar), or "cli" (local plantuml executable)
     server: "http://my-plantuml-server:8080/" # A PlantUML server URL
+    java_command: "java" # Only used in mode: jar
+    jar_path: "./tools/plantuml.jar" # Only used in mode: jar
+    cli_command: "plantuml" # Only used in mode: cli
     output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
 
   logging:
     level: "INFO"
-    file: "/tmp/mfa-logs/mule_flow_analyzer.log"
+    file: "mfa-logs/mule_flow_analyzer.log" # relative to cwd, or use an absolute path
 
   tag_rules:
     # A "Processor" is an action that a participant can perform on itself.
@@ -81,7 +85,7 @@ diagram_formatting_properties:
   verbose:
     # Verbosity can be tweaked for different aspects. Increasing verbosity leads to bigger diagrams/more output
     processors: True # Include more details about known processors
-    logging: False # Include MuleSoft logging and tracing processors in the diagram (Makes diagrams bigger)
+    logging: False # Include Mule logging and tracing processors in the diagram (Makes diagrams bigger)
     errors: False # Include the error handler processors in the diagram
     notes: True # Include any documentation tag values as a Note on the actor
 

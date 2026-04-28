@@ -4,15 +4,24 @@ DEFAULT_PROPERTIES = {
     'analyzer_properties': {
         'output_type': OutputFormat.SEQUENCE,
         'plantuml': {
+            # mode can be:
+            # - server: HTTP PlantUML server (local Docker-hosted or remote hosted)
+            # - jar: local java -jar plantuml.jar rendering
+            # - cli: local plantuml executable rendering
+            'mode': 'server',
             'server': 'http://localhost:8087/',
             # Uncomment for prod - 
             # 'server': 'https://www.plantuml.com/plantuml/',
+            'java_command': 'java',
+            'jar_path': './tools/plantuml.jar',
+            'cli_command': 'plantuml',
             'format': 'png',
             'output_directory': './output/plantuml'
         },
         'logging': {
             'level': 'INFO',
-            'file': '/tmp/mfa-logs/mule_flow_analyzer.log',
+            # Relative to process working directory unless overridden via user_config / YAML
+            'file': 'mfa-logs/mule_flow_analyzer.log',
             #'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             # Uncomment for prod - 
             'format': '%(asctime)s - %(levelname)s - %(message)s'

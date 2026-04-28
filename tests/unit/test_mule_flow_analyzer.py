@@ -1,9 +1,9 @@
 import unittest
 from pathlib import Path
 import os
-from src.mulesoft_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
-from src.mulesoft_flow_analyzer.config.constants import OutputFormat
-from src.mulesoft_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
+from mule_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
+from mule_flow_analyzer.config.constants import OutputFormat
+from mule_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
 
 class TestMuleFlowAnalyzer(unittest.TestCase):
     @classmethod

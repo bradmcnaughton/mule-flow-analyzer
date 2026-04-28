@@ -1,22 +1,34 @@
-# MuleSoft Flow Analyzer - Python Integration Guide
+# Mule Flow Analyzer — Python integration guide
 
 ## Overview
 
-The MuleSoft Flow Analyzer is a Python library designed to analyze MuleSoft integration projects and generate sequence diagrams or natural language descriptions of each flow. This guide provides detailed information for Python developers looking to integrate this library into their applications.
+**Mule Flow Analyzer** is a Python library designed to analyze Mule integration projects and generate sequence diagrams or natural language descriptions of each flow. This guide provides detailed information for Python developers looking to integrate this library into their applications.
 
 ## Installation
 
 ```bash
-pip install https://{GIT_ACCESS_TOKEN}@raw.githubusercontent.com/bradmcnaughton/private-python-packages/main/mulesoft-flow-analyzer/1.1.0/mulesoft_flow_analyzer-1.1.0-py3-none-any.whl
+pip install mule-flow-analyzer
 ```
+
+Pin a version if needed:
+
+```bash
+pip install mule-flow-analyzer==1.0.0
+```
+
+Package page: https://pypi.org/project/mule-flow-analyzer/
+
+### Log file path (for your app or CLI)
+
+The default configuration metadata includes `analyzer_properties.logging.file` (`mfa-logs/mule_flow_analyzer.log` relative to the process current working directory). The library does not configure Python’s `logging` module for you; this value is for **your** code or a CLI to read and attach a `FileHandler` if desired. Override it by merging `user_config` or external YAML into the analyzer configuration (see [configuration.md](configuration.md)).
 
 ## Core Components
 
 The library provides several key components:
 
-1. `MuleFlowAnalyzer`: The main class for analyzing MuleSoft projects
+1. `MuleFlowAnalyzer`: The main class for analyzing Mule projects
 2. `SequenceDiagramGenerator`: Generates sequence diagrams from flow analysis
-3. `MuleFlowElement`: Represents individual elements in a MuleSoft flow
+3. `MuleFlowElement`: Represents individual elements in a Mule flow
 4. `PropertyHierarchy`: Manages property file hierarchy for placeholder resolution
 
 ## Basic Usage
@@ -24,7 +36,7 @@ The library provides several key components:
 ### Initialization
 
 ```python
-from mulesoft_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy, OutputFormat
+from mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy, OutputFormat
 
 # Basic initialization
 analyzer = MuleFlowAnalyzer()
@@ -48,6 +60,7 @@ user_config = {
     'analyzer_properties': {
         'output_type': OutputFormat.TEXT,
         'plantuml': {
+            'mode': 'server',
             'server': 'http://localhost:8087/',
             'format': 'png'
         }
@@ -97,13 +110,14 @@ The library supports extensive configuration through the `DEFAULT_PROPERTIES` st
 ### Custom Configuration
 
 ```python
-from mulesoft_flow_analyzer import DEFAULT_PROPERTIES
+from mule_flow_analyzer import DEFAULT_PROPERTIES
 
 # Create custom configuration
 custom_config = {
     'analyzer_properties': {
         'output_type': OutputFormat.SEQUENCE,
         'plantuml': {
+            'mode': 'server',
             'server': 'http://localhost:8087/',
             'format': 'png',
             'output_directory': './output/diagrams'
@@ -156,10 +170,14 @@ analyzer.analyze_mule_flows(flow_name="my-flow")
 
 ## Error Handling
 
-The library includes custom exceptions for error handling:
+Exceptions live in `mule_flow_analyzer.exceptions`. `MuleFlowException` is the base for several types; diagram configuration and rendering use `ConfigurationError` and `RenderingError` (subclasses of `DiagramGenerationException`, which subclasses `MuleFlowException`).
 
 ```python
-from mulesoft_flow_analyzer.exceptions import MuleFlowException
+from mule_flow_analyzer.exceptions import (
+    MuleFlowException,
+    ConfigurationError,
+    RenderingError,
+)
 
 try:
     analyzer.analyze_mule_flows()
@@ -195,7 +213,10 @@ except MuleFlowException as e:
 ## Dependencies
 
 - Python 3.x
-- PlantUML server (for sequence diagram generation)
+- PlantUML rendering backend (for sequence diagram generation):
+  - `mode=server`: reachable PlantUML HTTP server (local Docker-hosted or hosted)
+  - `mode=jar`: local Java + `plantuml.jar`
+  - `mode=cli`: local `plantuml` executable
 - Required Python packages:
   - xmltodict
   - yaml
@@ -211,19 +232,21 @@ except MuleFlowException as e:
 
 2. **Diagram Generation Problems**
 
-   - Verify PlantUML server connectivity
+   - For `mode=server`, verify PlantUML server connectivity
+   - For `mode=jar`, verify Java and `jar_path`
+   - For `mode=cli`, verify `plantuml` command is on PATH
    - Check output directory permissions
    - Validate configuration settings
 
 3. **Flow Analysis Errors**
-   - Verify MuleSoft project structure
+   - Verify Mule project structure
    - Check XML file validity
    - Validate flow references
 
 ## Example Implementation
 
 ```python
-from mulesoft_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy, OutputFormat
+from mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy, OutputFormat
 import logging
 
 # Configure logging
@@ -245,6 +268,7 @@ def analyze_mule_project(project_path: str, flow_name: str = None):
             'analyzer_properties': {
                 'output_type': OutputFormat.SEQUENCE,
                 'plantuml': {
+                    'mode': 'server',
                     'server': 'http://localhost:8087/',
                     'format': 'png',
                     'output_directory': './output/diagrams'
@@ -256,7 +280,7 @@ def analyze_mule_project(project_path: str, flow_name: str = None):
         analyzer.analyze_mule_flows(flow_name)
 
     except Exception as e:
-        logging.error(f"Error analyzing MuleSoft project: {str(e)}")
+        logging.error(f"Error analyzing Mule project: {str(e)}")
         raise
 
 if __name__ == "__main__":
@@ -266,5 +290,5 @@ if __name__ == "__main__":
 ## Additional Resources
 
 - [Configuration Documentation](docs/configuration.md)
-- [CLI Implementation](https://github.com/bradmcnaughton/mulesoft-flow-analyzer-cli)
+- [CLI Implementation](https://github.com/bradmcnaughton/mule-flow-analyzer-cli)
 - [PlantUML Documentation](https://plantuml.com/)
