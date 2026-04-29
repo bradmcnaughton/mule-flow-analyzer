@@ -7,11 +7,13 @@ flow element representation, and sequence diagram generation.
 
 from .mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
 from .sequence_diagram_generator import SequenceDiagramGenerator
+from .mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
 from .mule_flow_element import MuleFlowElement
 
 __all__ = [
     'MuleFlowAnalyzer',
     'PropertyHierarchy',
     'SequenceDiagramGenerator',
+    'MermaidSequenceDiagramGenerator',
     'MuleFlowElement',
 ]

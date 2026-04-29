@@ -2,11 +2,11 @@
 name: mule-flow-analyzer
 description: >-
   Uses the PyPI package mule-flow-analyzer to analyze Mule integration flows in the
-  open workspace, generate PlantUML sequence diagrams or text descriptions, and tune
+  open workspace, generate PlantUML or Mermaid sequence diagrams or text descriptions, and tune
   analyzer configuration. Use when the user asks to document flows, generate sequence
   diagrams or UML, explain what a flow does, analyze src/main/mule XML, or run flow
-  analysis with PlantUML or placeholder properties.
-argument-hint: "[flow name] [--output-type TEXT|SEQUENCE|NATURAL] [--plantuml-server URL]"
+  analysis with PlantUML, Mermaid, or placeholder properties.
+argument-hint: "[flow name] [--output-type TEXT|SEQUENCE|NATURAL] [--diagram-engine plantuml|mermaid] [--plantuml-server URL]"
 ---
 
 # Mule Flow Analyzer
@@ -26,7 +26,7 @@ pip install mule-flow-analyzer
 
 | Goal                                    | Tool / action                                                                                                                                      |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run analysis without writing new Python | **Terminal:** run [scripts/run_analyzer.py](./scripts/run_analyzer.py) from the **Mule app workspace root** with `-p`, `-f`, `-o`, `-s` as needed. |
+| Run analysis without writing new Python | **Terminal:** run [scripts/run_analyzer.py](./scripts/run_analyzer.py) from the **Mule app workspace root** with `-p`, `-f`, `-o`, `-s`, `--diagram-engine` as needed. |
 | Install or fix imports                  | **Terminal:** `pip install mule-flow-analyzer` (or `pip show mule-flow-analyzer`).                                                                 |
 | Inspect flows / XML                     | **Read/search** files under `src/main/mule/` and `src/main/resources/`.                                                                            |
 | Build or adjust config in code          | **Edit** a small script or notebook that imports `MuleFlowAnalyzer` and passes `user_config` (see below).                                          |
@@ -38,8 +38,10 @@ Use the **workspace root of the Mule app** as `project_path` unless the user spe
 ### 1. Clarify the task (internally or with a short question)
 
 - **Whole app vs one flow:** Does the user want every flow or a named flow?
-- **Output:** Diagrams (PNG/SVG via PlantUML), printed structure (TEXT), or natural language (NATURAL)?
-- **PlantUML:** If SEQUENCE diagrams are requested, choose rendering mode: `server` (HTTP PlantUML server, default), `jar` (local `java -jar plantuml.jar`), or `cli` (local `plantuml` command). If `server`, default is `http://localhost:8087/`.
+- **Output:** Diagrams (PlantUML PNG/SVG or Mermaid `.mmd`/SVG/PNG), printed structure (TEXT), or natural language (NATURAL)?
+- **Diagram engine:** If SEQUENCE diagrams are requested, choose `plantuml` (default) or `mermaid`.
+- **PlantUML:** If PlantUML images are requested, choose rendering mode: `server` (HTTP PlantUML server, default), `jar` (local `java -jar plantuml.jar`), or `cli` (local `plantuml` command). If `server`, default is `http://localhost:8087/`.
+- **Mermaid:** If Mermaid is requested, default to `mode: "file"` and write `.mmd` source. Use `mode: "cli"` only when rendered images are requested and `mmdc` is available.
 - **Properties:** Should placeholders be resolved from `src/main/resources`? If yes, ask which property files or env (or use auto-discovery by omitting `property_files`).
 
 ### 1a. Required prompting behavior for image generation
@@ -53,6 +55,7 @@ When the user request is ambiguous, ask follow-up questions before running:
    - If not clear, ask: "Should I use a PlantUML server URL or local jar/cli rendering?"
 3. If user wants images, ensure output directory is explicit:
    - If not provided, ask for `output_directory` path.
+   - Mermaid `file` mode creates source files, not images; do not treat it as image rendering.
 
 Do not assume image rendering mode when the user has not clearly requested images.
 
@@ -71,6 +74,8 @@ If user requested images and selected a renderer, validate availability first:
   - Validate jar exists at configured `jar_path`.
 - `cli` mode:
   - Validate CLI exists: `<cli_command> -version`.
+- Mermaid `cli` mode:
+  - Validate CLI exists: `mmdc --version` or configured `<cli_command> --version`.
 
 If validation fails, explain exactly what is missing and offer automatic setup steps.
 
@@ -125,12 +130,14 @@ Merge overrides into `user_config` (the library merges with its defaults). Commo
 | User says                           | Set in `user_config`                                                                            |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | Text / list flows / print structure | `analyzer_properties.output_type` → `OutputFormat.TEXT`                                         |
-| Sequence diagram / UML / PlantUML via server | `OutputFormat.SEQUENCE`, `plantuml.mode: "server"`, `plantuml.server`, `format`, `output_directory` |
-| Sequence diagram / UML / PlantUML via jar | `OutputFormat.SEQUENCE`, `plantuml.mode: "jar"`, `plantuml.java_command`, `plantuml.jar_path`, `format`, `output_directory` |
-| Sequence diagram / UML / PlantUML via cli | `OutputFormat.SEQUENCE`, `plantuml.mode: "cli"`, `plantuml.cli_command`, `format`, `output_directory` |
+| Sequence diagram / UML / PlantUML via server | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "server"`, `plantuml.server`, `format`, `output_directory` |
+| Sequence diagram / UML / PlantUML via jar | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "jar"`, `plantuml.java_command`, `plantuml.jar_path`, `format`, `output_directory` |
+| Sequence diagram / UML / PlantUML via cli | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "cli"`, `plantuml.cli_command`, `format`, `output_directory` |
+| Mermaid source diagram | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "file"`, `mermaid.output_directory` |
+| Mermaid rendered diagram | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "cli"`, `mermaid.cli_command`, `format`, `output_directory` |
 | Natural language description        | `OutputFormat.NATURAL`                                                                          |
 | Use local PlantUML on 8087          | `plantuml.server`: `http://localhost:8087/`                                                     |
-| Put diagrams in a folder            | `plantuml.output_directory` (relative to cwd or absolute)                                       |
+| Put diagrams in a folder            | `plantuml.output_directory` or `mermaid.output_directory` (relative to cwd or absolute)          |
 | Log file location                   | `analyzer_properties.logging.file` (metadata for your logging setup)                            |
 
 Example:
@@ -141,6 +148,7 @@ from mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy, OutputFormat
 user_config = {
     "analyzer_properties": {
         "output_type": OutputFormat.SEQUENCE,
+        "diagram_engine": "plantuml",
         "plantuml": {
             "mode": "server",
             "server": "http://localhost:8087/",
@@ -164,12 +172,28 @@ Jar example:
 user_config = {
     "analyzer_properties": {
         "output_type": OutputFormat.SEQUENCE,
+        "diagram_engine": "plantuml",
         "plantuml": {
             "mode": "jar",
             "java_command": "java",
             "jar_path": "./tools/plantuml.jar",
             "format": "png",
             "output_directory": "./docs/generated/uml",
+        },
+    },
+}
+```
+
+Mermaid example:
+
+```python
+user_config = {
+    "analyzer_properties": {
+        "output_type": OutputFormat.SEQUENCE,
+        "diagram_engine": "mermaid",
+        "mermaid": {
+            "mode": "file",
+            "output_directory": "./docs/generated/mermaid",
         },
     },
 }
@@ -185,13 +209,16 @@ Use `PropertyHierarchy` only when the user specifies an order of property files;
 ```bash
 python scripts/run_analyzer.py --help
 python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE -s http://localhost:8087/
+python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE --diagram-engine mermaid --output-dir ./docs/generated/mermaid
 ```
 
 (Use the path to `scripts/run_analyzer.py` relative to where this skill folder sits in the workspace.)
 
 ## Limits and notes
 
-- **SEQUENCE** output requires a configured PlantUML renderer (`server`, `jar`, or `cli`).
+- **SEQUENCE** output defaults to PlantUML and requires a configured PlantUML renderer (`server`, `jar`, or `cli`) for images.
+- Mermaid `file` mode writes `.mmd` source without extra dependencies; Mermaid `cli` mode requires `mmdc`.
+- Mermaid does not support PlantUML actor icons, `skinparam`, colored arrows/groups/notes, or the generated PlantUML legend.
 - In `server` mode, only generated UML/diagrams leave the machine if you point `server` at a remote URL.
 - The library does not configure Python `logging` automatically; `logging.file` in config is metadata for your app or CLI.
 - Flow analysis is file-based; it does not drive Anypoint Studio.

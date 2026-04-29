@@ -12,6 +12,7 @@ from ..config.default_properties import DEFAULT_PROPERTIES
 from ..config.constants import OutputFormat
 from .mule_flow_element import MuleFlowElement
 from .sequence_diagram_generator import SequenceDiagramGenerator
+from .mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -658,6 +659,19 @@ class MuleFlowAnalyzer:
             elif self.output_format == OutputFormat.SEQUENCE:
                 self.generate_sequence_diagram(xml_file, flow_name)
 
+    def _get_sequence_diagram_generator(self):
+        diagram_engine = self.configuration_properties.get('analyzer_properties', {}).get('diagram_engine', 'plantuml')
+        diagram_engine = str(diagram_engine).strip().lower()
+
+        if diagram_engine == 'plantuml':
+            return SequenceDiagramGenerator(self.configuration_properties)
+        if diagram_engine == 'mermaid':
+            return MermaidSequenceDiagramGenerator(self.configuration_properties)
+
+        raise ValueError(
+            f"Unsupported diagram engine '{diagram_engine}'. Supported engines are: plantuml, mermaid."
+        )
+
     def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
         """
         Generate sequence diagrams for Mule flows in the specified XML file.
@@ -682,7 +696,7 @@ class MuleFlowAnalyzer:
         mule_flow_element = self.project_files[xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
-        mule_sequence_diagram_generator = SequenceDiagramGenerator(self.configuration_properties)
+        mule_sequence_diagram_generator = self._get_sequence_diagram_generator()
 
         for flow in flows:
             logger.info(f"Processing sequence for flow: {flow.attributes.get('name')}")

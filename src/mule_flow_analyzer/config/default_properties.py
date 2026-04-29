@@ -3,6 +3,9 @@ from .constants import OutputFormat
 DEFAULT_PROPERTIES = {
     'analyzer_properties': {
         'output_type': OutputFormat.SEQUENCE,
+        # Sequence diagram syntax engine. PlantUML remains the default for
+        # backwards compatibility.
+        'diagram_engine': 'plantuml',
         'plantuml': {
             # mode can be:
             # - server: HTTP PlantUML server (local Docker-hosted or remote hosted)
@@ -17,6 +20,16 @@ DEFAULT_PROPERTIES = {
             'cli_command': 'plantuml',
             'format': 'png',
             'output_directory': './output/plantuml'
+        },
+        'mermaid': {
+            # mode can be:
+            # - file: write Mermaid source only
+            # - cli: render through Mermaid CLI (mmdc)
+            'mode': 'file',
+            'cli_command': 'mmdc',
+            'format': 'svg',
+            'output_directory': './output/mermaid',
+            'source_extension': 'mmd'
         },
         'logging': {
             'level': 'INFO',

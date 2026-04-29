@@ -8,6 +8,7 @@ ideally with a venv where `mule-flow-analyzer` is installed:
   pip install mule-flow-analyzer
   python scripts/run_analyzer.py
   python scripts/run_analyzer.py --flow myFlowName --output-type SEQUENCE
+  python scripts/run_analyzer.py --flow myFlowName --diagram-engine mermaid
 """
 
 from __future__ import annotations
@@ -68,9 +69,26 @@ def main() -> int:
         help="PlantUML server base URL (SEQUENCE output). Default: http://localhost:8087/",
     )
     parser.add_argument(
+        "--diagram-engine",
+        choices=["plantuml", "mermaid"],
+        default="plantuml",
+        help="Sequence diagram syntax engine. Default: plantuml.",
+    )
+    parser.add_argument(
+        "--mermaid-mode",
+        choices=["file", "cli"],
+        default="file",
+        help="Mermaid output mode: write .mmd only or render with mmdc. Default: file.",
+    )
+    parser.add_argument(
+        "--mermaid-cli",
+        default="mmdc",
+        help="Mermaid CLI command for --mermaid-mode cli. Default: mmdc.",
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
-        help="Override diagram output directory (default: ./output/plantuml under project).",
+        help="Override diagram output directory (default depends on diagram engine).",
     )
     args = parser.parse_args()
 
@@ -78,14 +96,19 @@ def main() -> int:
     user_config = {
         "analyzer_properties": {
             "output_type": args.output_type,
+            "diagram_engine": args.diagram_engine,
             "plantuml": {
                 "server": args.plantuml_server,
                 "format": "png",
             },
+            "mermaid": {
+                "mode": args.mermaid_mode,
+                "cli_command": args.mermaid_cli,
+            },
         }
     }
     if args.output_dir:
-        user_config["analyzer_properties"]["plantuml"]["output_directory"] = args.output_dir
+        user_config["analyzer_properties"][args.diagram_engine]["output_directory"] = args.output_dir
 
     analyzer = MuleFlowAnalyzer(project_path=project, property_files=None, user_config=user_config)
     analyzer.analyze_mule_flows(flow_name=args.flow)

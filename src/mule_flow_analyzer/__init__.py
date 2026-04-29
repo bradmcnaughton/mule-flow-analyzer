@@ -7,6 +7,7 @@ sequence diagrams or natural language descriptions of each flow.
 
 from .analyzer.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
 from .analyzer.sequence_diagram_generator import SequenceDiagramGenerator
+from .analyzer.mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
 from .analyzer.mule_flow_element import MuleFlowElement
 from .config.default_properties import DEFAULT_PROPERTIES
 from .config.constants import OutputFormat
@@ -27,6 +28,7 @@ __all__ = [
     'MuleFlowAnalyzer',
     'PropertyHierarchy',
     'SequenceDiagramGenerator',
+    'MermaidSequenceDiagramGenerator',
     'MuleFlowElement',
     'DEFAULT_PROPERTIES',
     'OutputFormat',

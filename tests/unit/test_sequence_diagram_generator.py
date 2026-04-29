@@ -7,7 +7,9 @@ import copy
 import yaml
 from unittest.mock import patch, MagicMock
 from mule_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
+from mule_flow_analyzer.analyzer.mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
 from mule_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
+from mule_flow_analyzer.analyzer.mule_flow_element import MuleFlowElement
 from mule_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
 from io import StringIO
 import sys
@@ -824,6 +826,91 @@ flow [control-flows-until-successful]
                     for backend, was_called in called.items():
                         if backend != expected_backend:
                             self.assertFalse(was_called, f"{backend} should not be called for mode={mode}")
+
+    def test_mermaid_generator_creates_sequence_syntax(self):
+        """Mermaid generator should emit sequenceDiagram syntax."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'test-flow'},
+            children=[
+                MuleFlowElement('http:listener', {'config-ref': 'HTTP_CONFIG', 'path': '/orders'}),
+                MuleFlowElement('choice', {}, children=[
+                    MuleFlowElement('when', {'expression': '#[payload.valid]'}, children=[
+                        MuleFlowElement('db:select', {'config-ref': 'DB_CUSTOMER_CONFIG'}),
+                    ]),
+                    MuleFlowElement('otherwise', {}, children=[
+                        MuleFlowElement('logger', {'message': 'invalid'}),
+                    ]),
+                ]),
+                MuleFlowElement('async', {}, children=[
+                    MuleFlowElement('http:request', {'config-ref': 'HTTP_DOWNSTREAM', 'method': 'POST', 'path': '/notify'}),
+                ]),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertEqual(mermaid_content[0], 'sequenceDiagram')
+        self.assertEqual(mermaid_content[1], 'title test-flow')
+        self.assertTrue(any(line.startswith('actor HTTP') for line in mermaid_content))
+        self.assertIn('alt payload.valid', mermaid_content)
+        self.assertIn('else otherwise', mermaid_content)
+        self.assertIn('Note over http_listener: Async Start', mermaid_content)
+        self.assertTrue(any('HTTP_DOWNSTREAM' in line for line in mermaid_content))
+
+    def test_mermaid_render_file_mode_writes_mmd_source(self):
+        """Mermaid file mode should write source and return the .mmd path."""
+        mermaid_output_dir = Path('tests/output/mermaid')
+        if mermaid_output_dir.exists():
+            shutil.rmtree(mermaid_output_dir)
+
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['mermaid']['output_directory'] = mermaid_output_dir
+        config['analyzer_properties']['mermaid']['mode'] = 'file'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        result = generator.render_image(['sequenceDiagram', 'participant A', 'participant B', 'A ->> B: hello'], 'mermaid-flow')
+
+        expected_path = mermaid_output_dir / 'mermaid-flow.mmd'
+        self.assertEqual(result, str(expected_path))
+        self.assertTrue(expected_path.exists())
+        self.assertIn('A ->> B: hello', expected_path.read_text())
+        shutil.rmtree(mermaid_output_dir)
+
+    def test_mermaid_render_cli_mode_is_mockable(self):
+        """Mermaid CLI mode should dispatch to the CLI renderer without requiring mmdc in tests."""
+        mermaid_output_dir = Path('tests/output/mermaid-cli')
+        if mermaid_output_dir.exists():
+            shutil.rmtree(mermaid_output_dir)
+
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['mermaid']['output_directory'] = mermaid_output_dir
+        config['analyzer_properties']['mermaid']['mode'] = 'cli'
+        config['analyzer_properties']['mermaid']['format'] = 'svg'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+        fake_outfile = str(mermaid_output_dir / 'mermaid-cli-flow.svg')
+
+        with patch.object(generator, '_render_with_cli', return_value=fake_outfile) as mock_cli:
+            result = generator.render_image(['sequenceDiagram', 'A ->> B: hello'], 'mermaid-cli-flow')
+
+        self.assertEqual(result, fake_outfile)
+        mock_cli.assert_called_once()
+        self.assertTrue((mermaid_output_dir / 'mermaid-cli-flow.mmd').exists())
+        shutil.rmtree(mermaid_output_dir)
+
+    def test_analyzer_selects_mermaid_generator(self):
+        """Analyzer should select Mermaid generator when diagram_engine is mermaid."""
+        analyzer = MuleFlowAnalyzer(user_config={
+            'analyzer_properties': {
+                'output_type': OutputFormat.SEQUENCE,
+                'diagram_engine': 'mermaid',
+            }
+        })
+
+        self.assertIsInstance(analyzer._get_sequence_diagram_generator(), MermaidSequenceDiagramGenerator)
 
 if __name__ == '__main__':
     unittest.main()

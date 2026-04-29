@@ -27,9 +27,10 @@ The default configuration metadata includes `analyzer_properties.logging.file` (
 The library provides several key components:
 
 1. `MuleFlowAnalyzer`: The main class for analyzing Mule projects
-2. `SequenceDiagramGenerator`: Generates sequence diagrams from flow analysis
-3. `MuleFlowElement`: Represents individual elements in a Mule flow
-4. `PropertyHierarchy`: Manages property file hierarchy for placeholder resolution
+2. `SequenceDiagramGenerator`: Generates PlantUML sequence diagrams from flow analysis
+3. `MermaidSequenceDiagramGenerator`: Generates Mermaid sequence diagram syntax from flow analysis
+4. `MuleFlowElement`: Represents individual elements in a Mule flow
+5. `PropertyHierarchy`: Manages property file hierarchy for placeholder resolution
 
 ## Basic Usage
 
@@ -59,6 +60,7 @@ analyzer = MuleFlowAnalyzer(
 user_config = {
     'analyzer_properties': {
         'output_type': OutputFormat.TEXT,
+        'diagram_engine': 'plantuml',
         'plantuml': {
             'mode': 'server',
             'server': 'http://localhost:8087/',
@@ -89,6 +91,11 @@ The library supports extensive configuration through the `DEFAULT_PROPERTIES` st
 - `SEQUENCE`: Generates sequence diagrams
 - `NATURAL`: Generates natural language descriptions
 
+`SEQUENCE` supports `analyzer_properties.diagram_engine`:
+
+- `plantuml` (default): writes PlantUML source and renders through server, jar, or CLI depending on `analyzer_properties.plantuml.mode`.
+- `mermaid`: writes Mermaid `.mmd` source and optionally renders through Mermaid CLI depending on `analyzer_properties.mermaid.mode`.
+
 ### Diagram Formatting
 
 - Mule box colors and styling
@@ -116,6 +123,7 @@ from mule_flow_analyzer import DEFAULT_PROPERTIES
 custom_config = {
     'analyzer_properties': {
         'output_type': OutputFormat.SEQUENCE,
+        'diagram_engine': 'plantuml',
         'plantuml': {
             'mode': 'server',
             'server': 'http://localhost:8087/',
@@ -139,6 +147,29 @@ custom_config = {
 # Apply configuration
 analyzer.set_configuration_properties(custom_config)
 ```
+
+### Mermaid Output
+
+```python
+from mule_flow_analyzer import MuleFlowAnalyzer, OutputFormat
+
+analyzer = MuleFlowAnalyzer(
+    project_path="/path/to/mule/project",
+    user_config={
+        'analyzer_properties': {
+            'output_type': OutputFormat.SEQUENCE,
+            'diagram_engine': 'mermaid',
+            'mermaid': {
+                'mode': 'file',
+                'output_directory': './output/mermaid',
+            },
+        }
+    }
+)
+analyzer.analyze_mule_flows(flow_name="my-flow")
+```
+
+Use `mode: 'cli'` with `cli_command: 'mmdc'` and `format: 'svg'` or `png` if you want the library to render with Mermaid CLI. Source `.mmd` files are always written.
 
 ### Property File Management
 
@@ -165,7 +196,8 @@ analyzer.analyze_mule_flows(flow_name="my-flow")
 
 # The results will be:
 # - For TEXT output: Printed to console
-# - For SEQUENCE output: Saved as PNG files in the configured output directory
+# - For SEQUENCE + PlantUML: Saved as PlantUML source and rendered files in the configured output directory
+# - For SEQUENCE + Mermaid: Saved as .mmd source, optionally rendered by Mermaid CLI
 ```
 
 ## Error Handling
@@ -213,10 +245,13 @@ except MuleFlowException as e:
 ## Dependencies
 
 - Python 3.x
-- PlantUML rendering backend (for sequence diagram generation):
+- PlantUML rendering backend (for PlantUML sequence diagram rendering):
   - `mode=server`: reachable PlantUML HTTP server (local Docker-hosted or hosted)
   - `mode=jar`: local Java + `plantuml.jar`
   - `mode=cli`: local `plantuml` executable
+- Mermaid CLI is optional for Mermaid rendering:
+  - `mode=file`: no Mermaid dependency; use the generated `.mmd` files directly
+  - `mode=cli`: install `@mermaid-js/mermaid-cli` and make `mmdc` available on PATH
 - Required Python packages:
   - xmltodict
   - yaml
@@ -235,6 +270,7 @@ except MuleFlowException as e:
    - For `mode=server`, verify PlantUML server connectivity
    - For `mode=jar`, verify Java and `jar_path`
    - For `mode=cli`, verify `plantuml` command is on PATH
+   - For Mermaid `mode=cli`, verify `mmdc` is on PATH
    - Check output directory permissions
    - Validate configuration settings
 
@@ -267,6 +303,7 @@ def analyze_mule_project(project_path: str, flow_name: str = None):
         analyzer.set_configuration_properties({
             'analyzer_properties': {
                 'output_type': OutputFormat.SEQUENCE,
+                'diagram_engine': 'plantuml',
                 'plantuml': {
                     'mode': 'server',
                     'server': 'http://localhost:8087/',

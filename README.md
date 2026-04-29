@@ -44,7 +44,16 @@ The `name` field in `SKILL.md` must match the parent directory name (`mule-flow-
 
 ## Diagram Generation
 
-Sequence diagram image generation supports three PlantUML rendering approaches:
+Sequence diagram generation supports two syntax engines:
+
+- `plantuml` (default): writes PlantUML source and can render PNG/SVG through a server, local JAR, or CLI.
+- `mermaid`: writes Mermaid `.mmd` source and can optionally render through Mermaid CLI.
+
+Select the engine with `analyzer_properties.diagram_engine`. Existing configurations continue to use PlantUML by default.
+
+### PlantUML
+
+PlantUML image generation supports three rendering approaches:
 
 - `server`: HTTP PlantUML server URL (local Docker-hosted or hosted service)
 - `jar`: local `java -jar plantuml.jar` execution (offline, no Docker)
@@ -132,6 +141,40 @@ plantuml -version
 ```
 
 Refer to [Overriding Configuration](#overriding-configuration) for full configuration details.
+
+### Mermaid
+
+Mermaid output is useful when you want syntax that can be rendered by GitHub, GitLab, documentation tools, editor extensions, or Mermaid CLI.
+
+By default, Mermaid mode writes source only:
+
+```yaml
+analyzer_properties:
+  diagram_engine: "mermaid"
+  mermaid:
+    mode: "file"
+    output_directory: "./output/mermaid"
+    source_extension: "mmd"
+```
+
+To render with Mermaid CLI, install `@mermaid-js/mermaid-cli` and use `cli` mode:
+
+```bash
+npm install -g @mermaid-js/mermaid-cli
+mmdc --version
+```
+
+```yaml
+analyzer_properties:
+  diagram_engine: "mermaid"
+  mermaid:
+    mode: "cli"
+    cli_command: "mmdc"
+    format: "svg"
+    output_directory: "./output/mermaid"
+```
+
+Mermaid support intentionally degrades PlantUML-only features. Custom PlantUML actor icons, `skinparam`, scale settings, colored arrows, colored notes/groups, and the generated PlantUML legend do not have direct Mermaid equivalents.
 
 ## Overriding Configuration
 
