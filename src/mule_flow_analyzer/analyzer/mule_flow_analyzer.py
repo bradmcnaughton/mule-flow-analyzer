@@ -243,13 +243,20 @@ class MuleFlowAnalyzer:
                 try:
                     if self._is_mule_file(xml_file):
                         relative_path = xml_file.relative_to(self.project_path)
+                        normalized_relative_path = self._normalize_project_file_key(relative_path)
                         with xml_file.open('r', encoding='utf-8') as f:
-                            self.project_files[str(relative_path)] = f.read()
+                            self.project_files[normalized_relative_path] = f.read()
                 except Exception as e:
                     logger.error(f"Error processing XML file {xml_file}: {str(e)}")
         except Exception as e:
             logger.error(f"Error discovering project files: {str(e)}")
             raise
+
+    def _normalize_project_file_key(self, file_path: str) -> str:
+        """
+        Normalize project file keys to POSIX-style separators for cross-platform consistency.
+        """
+        return str(file_path).replace("\\", "/")
 
     # Recursive Helper Function to convert XML Text to a MuleFlowElement
     def xml_to_mule_flow_element(self, xml_string):
@@ -361,7 +368,7 @@ class MuleFlowAnalyzer:
         if self.properties_hierarchy is None:
             self.properties_hierarchy = PropertyHierarchy({})
 
-        for file_pattern in ["**/*.properties", "**/*.yaml"]:
+        for file_pattern in ["**/*.properties", "**/*.yaml", "**/*.yml"]:
             for prop_file in resources_dir.glob(file_pattern):
                 relative_path = prop_file.relative_to(resources_dir)
                 if str(relative_path) not in self.properties_hierarchy.values():
@@ -382,7 +389,9 @@ class MuleFlowAnalyzer:
                     full_path = resources_dir / file_path
                     self.discovered_properties[str(full_path)] = {}
 
-                    if file_path.endswith('.properties'):
+                    file_suffix = Path(file_path).suffix.lower()
+
+                    if file_suffix == '.properties':
                         with open(full_path, 'r', encoding='utf-8') as file:
                             for line in file:
                                 try:
@@ -395,7 +404,7 @@ class MuleFlowAnalyzer:
                                     logger.warning(f"Invalid property line in {file_path}: {line.strip()}")
                                     continue
 
-                    elif file_path.endswith('.yaml'):
+                    elif file_suffix in ['.yaml', '.yml']:
                         try:
                             with open(full_path, 'r', encoding='utf-8') as file:
                                 yaml_data = yaml.safe_load(file)
@@ -508,7 +517,8 @@ class MuleFlowAnalyzer:
         Returns:
             None
         """
-        mule_flow_element = self.project_files[xml_file]
+        normalized_xml_file = self._normalize_project_file_key(xml_file)
+        mule_flow_element = self.project_files[normalized_xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows. Else, returns ALL FLOWS in the xml file that has a flow with the name matching the flow_name
 
         # Process all flows in the file
@@ -693,7 +703,8 @@ class MuleFlowAnalyzer:
             SequenceDiagramGenerator configuration.
         """
         
-        mule_flow_element = self.project_files[xml_file]
+        normalized_xml_file = self._normalize_project_file_key(xml_file)
+        mule_flow_element = self.project_files[normalized_xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
         mule_sequence_diagram_generator = self._get_sequence_diagram_generator()
