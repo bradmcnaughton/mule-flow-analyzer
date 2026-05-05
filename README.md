@@ -30,7 +30,7 @@ pip install -e ".[dev]"
 
 This repo ships an [Agent Skill](https://code.visualstudio.com/docs/copilot/customization/agent-skills) for analyzing flows from inside a Mule workspace using Copilot or compatible agents.
 
-**Where it lives here:** [`.cursor/skills/mule-flow-analyzer/`](https://github.com/bradmcnaughton/mule-flow-analyzer/tree/master/.cursor/skills/mule-flow-analyzer/) (`SKILL.md` plus [`scripts/run_analyzer.py`](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/.cursor/skills/mule-flow-analyzer/scripts/run_analyzer.py)).
+**Where it lives here:** [`.cursor/skills/mule-flow-analyzer/`](https://github.com/bradmcnaughton/mule-flow-analyzer/tree/main/.cursor/skills/mule-flow-analyzer/) (`SKILL.md` plus [`scripts/run_analyzer.py`](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/main/.cursor/skills/mule-flow-analyzer/scripts/run_analyzer.py)).
 
 **Where to use it:** Copy the whole `mule-flow-analyzer` folder into a skill discovery location used by your IDE/agent. This can be inside your Mule application repository (the project that contains `src/main/mule/`) **or** in a shared/global skills directory configured in your IDE. Do not rely on this library clone for analyzing your apps unless you open that app as the workspace. Examples:
 
@@ -178,11 +178,11 @@ Mermaid support intentionally degrades PlantUML-only features. Custom PlantUML a
 
 ## Overriding Configuration
 
-For detailed configuration options, see [Configuration Documentation](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/docs/configuration.md).
+For detailed configuration options, see [Configuration Documentation](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/main/docs/configuration.md).
 
 ## Instructions for LLMs
 
-LLMs can be shown the [python usage instructions](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/docs/python_usage.md) to help them generate code.
+LLMs can be shown the [python usage instructions](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/main/docs/python_usage.md) to help them generate code.
 
 ## Troubleshooting
 

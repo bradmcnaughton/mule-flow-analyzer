@@ -239,8 +239,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
                           f"Participant at line {participant_idx} should be between box lines {box_start_idx} and {box_end_idx}")
 
         # Assert that the HTTP and LocalFileServer actors are present
-        self.assertIn(f'participant "<size:30>{self.analyzer_properties['diagram_formatting_properties']['actors']['http']}\\nHTTP" as HTTP', uml_content)
-        self.assertIn(f'participant "<size:30>{self.analyzer_properties['diagram_formatting_properties']['actors']['file']}\\nLocalFileServer SFTP" as LocalFileServer', uml_content)       
+        self.assertIn(f'participant "<size:30>{self.analyzer_properties["diagram_formatting_properties"]["actors"]["http"]}\\nHTTP" as HTTP', uml_content)
+        self.assertIn(f'participant "<size:30>{self.analyzer_properties["diagram_formatting_properties"]["actors"]["file"]}\\nLocalFileServer SFTP" as LocalFileServer', uml_content)       
 
         # Assert that the arrows are present
         self.assertIn(' -> "http:basic-security-filter\\n[Basic security filter]" : ', uml_content)
@@ -516,8 +516,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('loop Until Successful - Never Give Up max retries: 99999', uml_content)
 
         # Assert HTTP request
-        cow_tunes_path = "tests\\mule\\analyzer-tests\\src\\main\\resources\\properties\\dummy.yaml"
-        with open(cow_tunes_path, 'r') as file:
+        cow_tunes_path = Path("tests/mule/analyzer-tests/src/main/resources/properties/dummy.yaml")
+        with cow_tunes_path.open('r', encoding='utf-8') as file:
             dummy_yaml = yaml.safe_load(file)
         cow_tunes_path_value = dummy_yaml['cow']['tunes']['path']
         

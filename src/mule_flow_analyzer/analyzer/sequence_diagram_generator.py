@@ -252,8 +252,7 @@ class SequenceDiagramGenerator:
             
             # inject colour into arrows depending on the tracking vars
             if tracking_vars and 'transaction_stack' in tracking_vars.keys() and len(tracking_vars['transaction_stack']) > 0:
-                arrow_colour = f"[#{
-                    self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
+                arrow_colour = f"[#{self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
             else:
                 arrow_colour = ""
 
