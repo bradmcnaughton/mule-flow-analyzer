@@ -94,7 +94,9 @@ The library supports extensive configuration through the `DEFAULT_PROPERTIES` st
 `SEQUENCE` supports `analyzer_properties.diagram_engine`:
 
 - `plantuml` (default): writes PlantUML source and renders through server, jar, or CLI depending on `analyzer_properties.plantuml.mode`.
-- `mermaid`: writes Mermaid `.mmd` source and optionally renders through Mermaid CLI depending on `analyzer_properties.mermaid.mode`.
+- `mermaid` (experimental): writes Mermaid `.mmd` source and optionally renders through Mermaid CLI depending on `analyzer_properties.mermaid.mode`.
+
+PlantUML is the recommended sequence diagram output. Mermaid support is experimental and may not represent every Mule flow construct or formatting feature as accurately as PlantUML.
 
 ### Diagram Formatting
 
@@ -149,6 +151,8 @@ analyzer.set_configuration_properties(custom_config)
 ```
 
 ### Mermaid Output
+
+Mermaid support is experimental. Prefer PlantUML for the most complete sequence diagram output.
 
 ```python
 from mule_flow_analyzer import MuleFlowAnalyzer, OutputFormat

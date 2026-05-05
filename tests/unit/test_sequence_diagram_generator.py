@@ -855,11 +855,70 @@ flow [control-flows-until-successful]
 
         self.assertEqual(mermaid_content[0], 'sequenceDiagram')
         self.assertEqual(mermaid_content[1], 'title test-flow')
-        self.assertTrue(any(line.startswith('actor HTTP') for line in mermaid_content))
+        self.assertIn('box Consumers', mermaid_content)
+        self.assertIn('actor HTTP as Consumer - HTTP', mermaid_content)
+        self.assertIn('box Mule Components', mermaid_content)
+        self.assertIn('participant http_listener as Mule - http:listener', mermaid_content)
+        self.assertIn('box Providers', mermaid_content)
+        self.assertIn('participant HTTP_DOWNSTREAM as Provider - HTTP DOWNSTREAM', mermaid_content)
         self.assertIn('alt payload.valid', mermaid_content)
         self.assertIn('else otherwise', mermaid_content)
         self.assertIn('Note over http_listener: Async Start', mermaid_content)
         self.assertTrue(any('HTTP_DOWNSTREAM' in line for line in mermaid_content))
+
+    def test_mermaid_scatter_gather_consolidates_all_parallel_routes(self):
+        """Mermaid scatter-gather output should keep every route endpoint before the join."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'scatter-flow'},
+            children=[
+                MuleFlowElement('http:listener', {'config-ref': 'HTTP_CONFIG', 'path': '/scatter'}),
+                MuleFlowElement('scatter-gather', {'documentation:name': 'Fan Out'}, children=[
+                    MuleFlowElement('route', {}, children=[
+                        MuleFlowElement('set-variable', {'variableName': 'routeA'}),
+                    ]),
+                    MuleFlowElement('route', {}, children=[
+                        MuleFlowElement('set-variable', {'variableName': 'routeB'}),
+                    ]),
+                ]),
+                MuleFlowElement('ee:transform', {'documentation:name': 'Join Routes'}),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertIn('set_variable_routeA ->> ee_transform_Join_Routes: ', mermaid_content)
+        self.assertIn('set_variable_routeB ->> ee_transform_Join_Routes: ', mermaid_content)
+
+    def test_mermaid_transactions_follow_plantuml_start_and_end_semantics(self):
+        """Mermaid transaction notes should only mark actual transaction boundaries."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'transaction-flow'},
+            children=[
+                MuleFlowElement(
+                    'jms:listener',
+                    {
+                        'destination': 'orders',
+                        'transactionalAction': 'ALWAYS_BEGIN',
+                        'transactionType': 'XA',
+                    },
+                ),
+                MuleFlowElement('db:insert', {'config-ref': 'DB_A', 'transactionalAction': 'ALWAYS_JOIN'}),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertIn('Note over jms_listener: XA Transaction Starting', mermaid_content)
+        self.assertIn('Note over db_insert: XA Transaction End', mermaid_content)
+        self.assertFalse(any('Local Transaction Starting' in line for line in mermaid_content))
 
     def test_mermaid_render_file_mode_writes_mmd_source(self):
         """Mermaid file mode should write source and return the .mmd path."""

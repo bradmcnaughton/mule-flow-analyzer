@@ -39,7 +39,7 @@ Use the **workspace root of the Mule app** as `project_path` unless the user spe
 
 - **Whole app vs one flow:** Does the user want every flow or a named flow?
 - **Output:** Diagrams (PlantUML PNG/SVG or Mermaid `.mmd`/SVG/PNG), printed structure (TEXT), or natural language (NATURAL)?
-- **Diagram engine:** If SEQUENCE diagrams are requested, choose `plantuml` (default) or `mermaid`.
+- **Diagram engine:** If SEQUENCE diagrams are requested, choose `plantuml` (default and recommended). Use `mermaid` only when the user explicitly asks for Mermaid output; Mermaid support is experimental.
 - **PlantUML:** If PlantUML images are requested, choose rendering mode: `server` (HTTP PlantUML server, default), `jar` (local `java -jar plantuml.jar`), or `cli` (local `plantuml` command). If `server`, default is `http://localhost:8087/`.
 - **Mermaid:** If Mermaid is requested, default to `mode: "file"` and write `.mmd` source. Use `mode: "cli"` only when rendered images are requested and `mmdc` is available.
 - **Properties:** Should placeholders be resolved from `src/main/resources`? If yes, ask which property files or env (or use auto-discovery by omitting `property_files`).
@@ -133,8 +133,8 @@ Merge overrides into `user_config` (the library merges with its defaults). Commo
 | Sequence diagram / UML / PlantUML via server | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "server"`, `plantuml.server`, `format`, `output_directory` |
 | Sequence diagram / UML / PlantUML via jar | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "jar"`, `plantuml.java_command`, `plantuml.jar_path`, `format`, `output_directory` |
 | Sequence diagram / UML / PlantUML via cli | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "cli"`, `plantuml.cli_command`, `format`, `output_directory` |
-| Mermaid source diagram | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "file"`, `mermaid.output_directory` |
-| Mermaid rendered diagram | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "cli"`, `mermaid.cli_command`, `format`, `output_directory` |
+| Mermaid source diagram (experimental) | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "file"`, `mermaid.output_directory` |
+| Mermaid rendered diagram (experimental) | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "cli"`, `mermaid.cli_command`, `format`, `output_directory` |
 | Natural language description        | `OutputFormat.NATURAL`                                                                          |
 | Use local PlantUML on 8087          | `plantuml.server`: `http://localhost:8087/`                                                     |
 | Put diagrams in a folder            | `plantuml.output_directory` or `mermaid.output_directory` (relative to cwd or absolute)          |
@@ -184,7 +184,7 @@ user_config = {
 }
 ```
 
-Mermaid example:
+Mermaid example (experimental; PlantUML is recommended):
 
 ```python
 user_config = {
@@ -217,6 +217,7 @@ python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE --diagram-en
 ## Limits and notes
 
 - **SEQUENCE** output defaults to PlantUML and requires a configured PlantUML renderer (`server`, `jar`, or `cli`) for images.
+- Mermaid support is experimental. Prefer PlantUML for the most complete Mule sequence diagram output.
 - Mermaid `file` mode writes `.mmd` source without extra dependencies; Mermaid `cli` mode requires `mmdc`.
 - Mermaid does not support PlantUML actor icons, `skinparam`, colored arrows/groups/notes, or the generated PlantUML legend.
 - In `server` mode, only generated UML/diagrams leave the machine if you point `server` at a remote URL.

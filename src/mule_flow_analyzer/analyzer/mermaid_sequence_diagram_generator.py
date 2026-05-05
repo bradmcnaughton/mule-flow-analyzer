@@ -4,7 +4,7 @@ import re
 import shutil
 import subprocess
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from .mule_flow_element import MuleFlowElement
 from .sequence_diagram_generator import (
@@ -102,17 +102,28 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
 
         participants: Dict[str, str] = {}
         participant_types: Dict[str, str] = {}
+        participant_roles: Dict[str, str] = {}
         content: List[str] = ["sequenceDiagram"]
         flow_name = flow.attributes.get('name') or 'Unnamed Flow'
         content.append(f"title {self.clean_mermaid_label(flow_name)}")
 
-        def record(label: str, participant_type: str = 'participant') -> str:
-            alias = self._record_participant(label, participants, participant_type)
+        def record(label: str, participant_type: str = 'participant', role: str = 'mule') -> str:
+            clean_label = self.clean_mermaid_label(label)
+            base_alias = self.clean_mermaid_alias(clean_label)
+            alias = base_alias
+            while alias in participants and (
+                participants[alias] != clean_label or participant_roles.get(alias) != role
+            ):
+                self._alias_counts[base_alias] = self._alias_counts.get(base_alias, 1) + 1
+                alias = f"{base_alias}_{self._alias_counts[base_alias]}"
+
+            participants[alias] = clean_label
             if participant_types.get(alias) != 'actor':
                 participant_types[alias] = participant_type
+            participant_roles[alias] = role
             return alias
 
-        mule_alias = record('Mule')
+        mule_alias = record('Mule', role='mule')
         previous_actor = mule_alias
 
         event_source = None
@@ -131,17 +142,51 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                 event_source_alias, event_source_description, event_source_class_name = self.pretty_participant(event_source)
 
         if event_source_alias:
-            source_alias = record(event_source_alias, 'actor')
+            source_alias = record(event_source_alias, 'actor', role='consumer')
             target_label = str(flow.children[0]) if event_source == 'apikit' and flow.children else str(event_source)
-            previous_actor = record(target_label)
+            previous_actor = record(target_label, role='mule')
             content.append(self._format_message(source_alias, previous_actor, event_source_description, 'flow'))
 
-        def process_element(element: MuleFlowElement, current_previous_actor: str) -> str:
+        PreviousActor = Union[str, List[str]]
+        transaction_stack: List[str] = []
+        transactions_success_list = ['flow', 'try', 'on-error-continue']
+        transactions_failure_list = ['on-error-propagate', 'raise-error']
+
+        def append_incoming_messages(
+            source_aliases: PreviousActor,
+            target_alias: str,
+            description: Optional[str] = None,
+        ) -> None:
+            sources = source_aliases if isinstance(source_aliases, list) else [source_aliases]
+            arrow_style = 'parallel' if isinstance(source_aliases, list) else 'flow'
+            for source_alias in sources:
+                content.append(self._format_message(source_alias, target_alias, description, arrow_style))
+
+        def note_actor(actor: PreviousActor) -> str:
+            return actor[-1] if isinstance(actor, list) else actor
+
+        def append_transaction_end(element: MuleFlowElement, current_actor: PreviousActor) -> None:
+            if not transaction_stack:
+                return
+
+            if element.tag not in transactions_success_list + transactions_failure_list:
+                return
+
+            actor = current_actor[-1] if isinstance(current_actor, list) else current_actor
+            transaction_type = transaction_stack[-1]
+            if element.tag in transactions_success_list:
+                content.append(f"Note over {actor}: {self.clean_mermaid_note(transaction_type)} Transaction End")
+            else:
+                content.append(f"Note over {actor}: {self.clean_mermaid_note(transaction_type)} Transaction Failure")
+            transaction_stack.pop()
+
+        def process_element(element: MuleFlowElement, current_previous_actor: PreviousActor) -> PreviousActor:
             nonlocal content
 
             if element.tag in ['flow', 'sub-flow']:
                 for child in element.children:
                     current_previous_actor = process_element(child, current_previous_actor)
+                append_transaction_end(element, current_previous_actor)
                 return current_previous_actor
 
             if element.tag in ['choice', 'round-robin']:
@@ -176,10 +221,10 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                         route_previous = process_element(child, route_previous)
                     route_end_aliases.append(route_previous)
                 content.append("end")
-                return route_end_aliases[-1] if route_end_aliases else current_previous_actor
+                return route_end_aliases if route_end_aliases else current_previous_actor
 
             if element.tag == 'async':
-                content.append(f"Note over {current_previous_actor}: Async Start")
+                content.append(f"Note over {note_actor(current_previous_actor)}: Async Start")
                 async_previous = current_previous_actor
                 for child in element.children:
                     async_previous = process_element(child, async_previous)
@@ -192,7 +237,7 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                     try_previous = process_element(child, try_previous)
                 content.append("else Error Handling")
                 if element.error_handler_ref:
-                    content.append(f"Note over {try_previous}: {self.clean_mermaid_note(element.error_handler_ref)}")
+                    content.append(f"Note over {note_actor(try_previous)}: {self.clean_mermaid_note(element.error_handler_ref)}")
                 if self.properties['diagram_formatting_properties']['verbose']['errors'] and element.error_handler_element:
                     error_previous = try_previous
                     for child in element.error_handler_element.children:
@@ -210,20 +255,31 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                 content.append("end")
                 return cache_previous
 
+            if element.tag.split(':')[0] == 'batch':
+                batch_previous = current_previous_actor
+                for child in element.children:
+                    batch_previous = process_element(child, batch_previous)
+                return batch_previous
+
             should_render_processor = (
                 element.tag not in CONTROL_FLOW_BOUNDARY_TAGS
                 and (element.tag not in LOGGING_PROCESSORS or self.properties['diagram_formatting_properties']['verbose']['logging'])
             )
 
             if should_render_processor:
-                current_alias = record(str(element))
+                current_alias = record(str(element), role='mule')
                 is_event_source_processor = element is event_source and current_previous_actor == current_alias
                 if not is_event_source_processor:
-                    content.append(self._format_message(current_previous_actor, current_alias, None, 'flow'))
+                    append_incoming_messages(current_previous_actor, current_alias)
 
                 if element.attributes.get('transactionalAction'):
-                    transaction_type = element.attributes.get('transactionType') or 'Local'
-                    content.append(f"Note over {current_alias}: {self.clean_mermaid_note(transaction_type)} Transaction Starting")
+                    transactional_action = element.attributes.get('transactionalAction')
+                    if transactional_action == 'ALWAYS_BEGIN' or (
+                        transactional_action == 'BEGIN_OR_JOIN' and not transaction_stack
+                    ):
+                        transaction_type = element.attributes.get('transactionType') or 'Local'
+                        transaction_stack.append(transaction_type)
+                        content.append(f"Note over {current_alias}: {self.clean_mermaid_note(transaction_type)} Transaction Starting")
 
                 if element.tag == 'raise-error':
                     note = f"Raising Error<br/>{self.clean_mermaid_note(element.attributes.get('type', 'Missing Error Type'))}"
@@ -245,7 +301,11 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
 
                 target_alias, target_description, target_class_name = self.pretty_participant(element, source_or_target='target')
                 if target_alias and not is_event_source_processor:
-                    external_alias = record(target_alias, 'actor' if target_class_name in ['scheduler'] else 'participant')
+                    external_alias = record(
+                        target_alias,
+                        'actor' if target_class_name in ['scheduler'] else 'participant',
+                        role='provider',
+                    )
                     content.append(self._format_message(current_alias, external_alias, target_description, 'flow'))
                     content.append(self._format_message(external_alias, current_alias, None, 'return'))
 
@@ -255,15 +315,44 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                 for child in element.children:
                     current_previous_actor = process_element(child, current_previous_actor)
 
+            append_transaction_end(element, current_previous_actor)
             return current_previous_actor
 
         for child in flow.children:
             previous_actor = process_element(child, previous_actor)
+        append_transaction_end(flow, previous_actor)
+
+        def label_for_role(alias: str, label: str) -> str:
+            role = participant_roles.get(alias, 'mule')
+            if role == 'consumer':
+                return f"Consumer - {label}"
+            if role == 'provider':
+                return f"Provider - {label}"
+            if label == 'Mule':
+                return 'Mule Runtime'
+            return f"Mule - {label}"
+
+        def participant_line(alias: str, label: str) -> str:
+            participant_type = participant_types.get(alias, 'participant')
+            return f"{participant_type} {alias} as {label_for_role(alias, label)}"
 
         participant_lines = []
-        for alias, label in participants.items():
-            participant_type = participant_types.get(alias, 'participant')
-            participant_lines.append(f"{participant_type} {alias} as {label}")
+        for role, box_label in [
+            ('consumer', 'Consumers'),
+            ('mule', 'Mule Components'),
+            ('provider', 'Providers'),
+        ]:
+            role_aliases = [
+                alias for alias in participants
+                if participant_roles.get(alias, 'mule') == role
+            ]
+            if not role_aliases:
+                continue
+
+            participant_lines.append(f"box {box_label}")
+            for alias in role_aliases:
+                participant_lines.append(participant_line(alias, participants[alias]))
+            participant_lines.append("end")
 
         return content[:2] + participant_lines + content[2:]
 

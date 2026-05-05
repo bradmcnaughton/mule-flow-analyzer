@@ -26,28 +26,26 @@ For development, clone the repository and install in editable mode with test dep
 pip install -e ".[dev]"
 ```
 
-Maintainers: see [Releasing to PyPI](docs/RELEASING.md).
-
 ## IDE agent skill (VS Code / GitHub Copilot)
 
 This repo ships an [Agent Skill](https://code.visualstudio.com/docs/copilot/customization/agent-skills) for analyzing flows from inside a Mule workspace using Copilot or compatible agents.
 
-**Where it lives here:** [`.cursor/skills/mule-flow-analyzer/`](.cursor/skills/mule-flow-analyzer/) (`SKILL.md` plus [`scripts/run_analyzer.py`](.cursor/skills/mule-flow-analyzer/scripts/run_analyzer.py)).
+**Where it lives here:** [`.cursor/skills/mule-flow-analyzer/`](https://github.com/bradmcnaughton/mule-flow-analyzer/tree/master/.cursor/skills/mule-flow-analyzer/) (`SKILL.md` plus [`scripts/run_analyzer.py`](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/.cursor/skills/mule-flow-analyzer/scripts/run_analyzer.py)).
 
-**Where to use it:** Copy the whole `mule-flow-analyzer` folder into **your Mule application repository** (the project that contains `src/main/mule/`). Do not rely on this library clone for analyzing your apps unless you open that app as the workspace. Suggested paths after copying:
+**Where to use it:** Copy the whole `mule-flow-analyzer` folder into a skill discovery location used by your IDE/agent. This can be inside your Mule application repository (the project that contains `src/main/mule/`) **or** in a shared/global skills directory configured in your IDE. Do not rely on this library clone for analyzing your apps unless you open that app as the workspace. Examples:
 
-- `.github/skills/mule-flow-analyzer/` (works well with GitHub Copilot in VS Code), or
-- `.cursor/skills/mule-flow-analyzer/`, or
-- any folder allowed by your `chat.skillsLocations` setting.
+- `.github/skills/mule-flow-analyzer/` (commonly used by GitHub Copilot in VS Code), or
+- `.cursor/skills/mule-flow-analyzer/` in the target workspace, or
+- any shared/global folder configured for skill discovery (for example via `chat.skillsLocations`).
 
 The `name` field in `SKILL.md` must match the parent directory name (`mule-flow-analyzer`). After copying, install the package in a venv (`pip install mule-flow-analyzer`) and run the helper from the Mule app root; see the script’s `--help` for flags.
 
 ## Diagram Generation
 
-Sequence diagram generation supports two syntax engines:
+Sequence diagram generation supports two syntax engines. PlantUML is the recommended output format for sequence diagrams.
 
 - `plantuml` (default): writes PlantUML source and can render PNG/SVG through a server, local JAR, or CLI.
-- `mermaid`: writes Mermaid `.mmd` source and can optionally render through Mermaid CLI.
+- `mermaid` (experimental): writes Mermaid `.mmd` source and can optionally render through Mermaid CLI.
 
 Select the engine with `analyzer_properties.diagram_engine`. Existing configurations continue to use PlantUML by default.
 
@@ -144,7 +142,9 @@ Refer to [Overriding Configuration](#overriding-configuration) for full configur
 
 ### Mermaid
 
-Mermaid output is useful when you want syntax that can be rendered by GitHub, GitLab, documentation tools, editor extensions, or Mermaid CLI.
+Mermaid support is experimental. PlantUML is the recommended sequence diagram output because it has the most complete mapping for Mule flow constructs and formatting.
+
+Mermaid output can still be useful when you want syntax that can be rendered by GitHub, GitLab, documentation tools, editor extensions, or Mermaid CLI.
 
 By default, Mermaid mode writes source only:
 
@@ -178,11 +178,11 @@ Mermaid support intentionally degrades PlantUML-only features. Custom PlantUML a
 
 ## Overriding Configuration
 
-For detailed configuration options, see [Configuration Documentation](docs/configuration.md).
+For detailed configuration options, see [Configuration Documentation](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/docs/configuration.md).
 
 ## Instructions for LLMs
 
-LLMs can be shown the [python usage instructions](docs/python_usage.md) to help them generate code.
+LLMs can be shown the [python usage instructions](https://github.com/bradmcnaughton/mule-flow-analyzer/blob/master/docs/python_usage.md) to help them generate code.
 
 ## Troubleshooting
 

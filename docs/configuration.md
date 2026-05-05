@@ -2,7 +2,7 @@
 
 Overriding configuration options is possible with a YAML file. The following example shows all possible options being overriden. None are mandatory. Only include what you want to override.
 
-Typically the most common options to override are the sequence diagram engine, PlantUML or Mermaid renderer settings, and the log file path (`analyzer_properties.logging.file`). The default log file path is relative to the current working directory when the process starts.
+Typically the most common options to override are the sequence diagram engine, PlantUML or Mermaid renderer settings, and the log file path (`analyzer_properties.logging.file`). PlantUML is the recommended sequence diagram output. Mermaid support is experimental and may not represent every Mule flow construct or formatting feature as accurately as PlantUML. The default log file path is relative to the current working directory when the process starts.
 
 Depending on your implementation, the tag_rules may be useful to override if processors are being treated as participants or not.
 
@@ -16,7 +16,7 @@ Gradients should be specified as color1(/|\-)color2 without hashes. E.G. `LightB
 
 ```yaml
 analyzer_properties:
-  diagram_engine: "plantuml" # "plantuml" (default) or "mermaid"
+  diagram_engine: "plantuml" # "plantuml" (default, recommended) or "mermaid" (experimental)
 
   plantuml:
     mode: "server" # "server" (HTTP), "jar" (local java -jar), or "cli" (local plantuml executable)
@@ -26,7 +26,7 @@ analyzer_properties:
     cli_command: "plantuml" # Only used in mode: cli
     output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
 
-  mermaid:
+  mermaid: # Experimental sequence diagram output
     mode: "file" # "file" writes .mmd only, "cli" renders with Mermaid CLI
     cli_command: "mmdc" # Only used in mode: cli
     format: "svg" # Only used in mode: cli
