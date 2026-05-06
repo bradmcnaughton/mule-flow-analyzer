@@ -322,39 +322,57 @@ class SequenceDiagramGenerator:
             transactions_failure_list = ['on-error-propagate', 'raise-error']
 
             skip_end_group = False
+            should_close_control_group = False
+            ignored_group_note_enabled = self.properties['diagram_formatting_properties'].get('verbose', {}).get('ignored_group_note', True)
 
             # Opening Element Checks
             if element.tag in ['flow', 'sub-flow']:
                 if not content[-1].startswith("title"):
                     content.append(f"group {element.tag} {element.attributes.get('name')}")
+                    should_close_control_group = True
                 else:
                     skip_end_group = True
             elif element.tag in ['choice', 'round-robin']:
-                # Do alt branches
-                tracking_vars['choice_stack'].append(element.children)
-                
-                choice_opened = False
                 choice_previous_actor = tracking_vars['previous_actor']
-                
-                # Group is implicitly created by the first choice "alt" and subsequent choices are "else"
-                for choice in tracking_vars['choice_stack'][len(tracking_vars['choice_stack'])-1]:
-                    if not choice_opened:
-                        if element.tag == 'round-robin':
-                            content.append(f"alt Round Robin First Target")
-                            content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name', 'Round Robin')}")
-                        else:
-                            content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
-                        choice_opened = True
-                        content = process_element(choice, content, tracking_vars)
-                    else:
-                        if element.tag == 'round-robin':
-                            content.append(f"else Round Robin Next Target")
-                        else:
-                            content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', 'else'))}")
-                        content = process_element(choice, content, tracking_vars)
-                    # Reset the previous actor to the choice actor
-                    
+                visible_choices = []
+
+                # Build each branch first so we can skip empty branches
+                for choice in element.children:
+                    branch_content = []
+                    for choice_child in choice.children:
+                        branch_content = process_element(choice_child, branch_content, tracking_vars)
+                    if branch_content:
+                        visible_choices.append((choice, branch_content, tracking_vars['previous_actor']))
                     tracking_vars['previous_actor'] = choice_previous_actor
+
+                if len(visible_choices) == 0:
+                    if ignored_group_note_enabled:
+                        content.append(
+                            f"note over {self.clean_uml_syntax(choice_previous_actor)}: "
+                            f"({element.tag}) group ({element.attributes.get('documentation:name', element.tag)}) not shown as all processors are ignored"
+                        )
+                elif len(visible_choices) == 1:
+                    _, branch_content, branch_last_actor = visible_choices[0]
+                    content.extend(branch_content)
+                    tracking_vars['previous_actor'] = branch_last_actor
+                else:
+                    should_close_control_group = True
+                    choice_opened = False
+                    for choice, branch_content, _ in visible_choices:
+                        if not choice_opened:
+                            if element.tag == 'round-robin':
+                                content.append("alt Round Robin First Target")
+                                content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name', 'Round Robin')}")
+                            else:
+                                content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
+                            choice_opened = True
+                        else:
+                            if element.tag == 'round-robin':
+                                content.append("else Round Robin Next Target")
+                            else:
+                                content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', 'else'))}")
+                        content.extend(branch_content)
+                        tracking_vars['previous_actor'] = choice_previous_actor
                 
             elif element.tag in ['foreach', 'until-successful', 'parallel-foreach']:
                 # Track the loop event source
@@ -362,34 +380,54 @@ class SequenceDiagramGenerator:
                                               
                 for item in element.children:
                     content = process_element(item, content, tracking_vars)
+                if tracking_vars['loop_event_source'] == element:
+                    # No visible child was rendered, so no loop group was opened.
+                    tracking_vars['loop_event_source'] = None
+                else:
+                    should_close_control_group = True
             elif element.tag in ['scatter-gather', 'first-successful']:
                 # Track the parallel event source
                 tracking_vars['parallel_sources'] = []
                 local_parallel_sources = []
                 parallel_previous_actor = tracking_vars['previous_actor']
+                visible_routes = []
 
-                content.append(f"par {element.attributes.get('documentation:name', element.tag)}")
-                if element.tag == 'first-successful':
-                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} : First Successful Will Be Used")
-                routes_opened = False
-
-                # Process the children (route tags)
+                # Build each route first so we can skip empty routes created by filtered processors
                 for route in element.children:
-                    if routes_opened:
-                        content.append("else")
-                        
+                    route_content = []
                     for child in route.children:
-                        content = process_element(child, content, tracking_vars)
-
-                    # Open Routes (to trigger "else" syntax)
-                    routes_opened = True
-                    # Keep track of the last actor of each route to be used as the previous actor for the consolidating route
-                    local_parallel_sources.append(tracking_vars['previous_actor'])
-                    # Reset the previous actor to the parallel source for any future loops
+                        route_content = process_element(child, route_content, tracking_vars)
+                    if route_content:
+                        visible_routes.append((route_content, tracking_vars['previous_actor']))
                     tracking_vars['previous_actor'] = parallel_previous_actor
-                
-                # Add the parallel sources consolidating
-                tracking_vars['parallel_sources'] = local_parallel_sources
+
+                if len(visible_routes) == 0:
+                    if ignored_group_note_enabled:
+                        content.append(
+                            f"note over {self.clean_uml_syntax(parallel_previous_actor)}: "
+                            f"({element.tag}) group ({element.attributes.get('documentation:name', element.tag)}) not shown as all processors are ignored"
+                        )
+                elif len(visible_routes) == 1:
+                    route_content, route_last_actor = visible_routes[0]
+                    content.extend(route_content)
+                    tracking_vars['previous_actor'] = route_last_actor
+                else:
+                    should_close_control_group = True
+                    content.append(f"par {element.attributes.get('documentation:name', element.tag)}")
+                    if element.tag == 'first-successful':
+                        content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} : First Successful Will Be Used")
+
+                    routes_opened = False
+                    for route_content, route_last_actor in visible_routes:
+                        if routes_opened:
+                            content.append("else")
+                        content.extend(route_content)
+                        routes_opened = True
+                        local_parallel_sources.append(route_last_actor)
+                        tracking_vars['previous_actor'] = parallel_previous_actor
+
+                    # Add the parallel sources consolidating
+                    tracking_vars['parallel_sources'] = local_parallel_sources
             
             elif element.tag == 'async':
                 # Don't create a participant for async, show the async processors instead
@@ -592,7 +630,7 @@ class SequenceDiagramGenerator:
                 tracking_vars['transaction_stack'].pop()
             
             # Ending a Group
-            if not skip_end_group and element.tag in (['flow', 'sub-flow'] + CONTROL_FLOW_TAGS):
+            if not skip_end_group and should_close_control_group and element.tag in (['flow', 'sub-flow'] + CONTROL_FLOW_TAGS):
                 content.append("end")
             else:
                 # Response line

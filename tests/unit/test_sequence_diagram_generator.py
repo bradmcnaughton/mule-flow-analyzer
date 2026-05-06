@@ -717,22 +717,57 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('end', uml_content)
 
         # Assert HTTP requests for each route
+        parallel_arrow = self.analyzer_properties["diagram_formatting_properties"]["arrows"]["parallel"]
         for island in ['Tatooga', 'Bermuda', 'Aruba']:
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.body', uml_content)
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.uri params', uml_content)
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "HTTP_1" : HTTP Request: (GET /islands/{{island-name}})', uml_content)
             self.assertIn(f'"HTTP_1" --> "http:request\\n[Request {island} Payload]" : ', uml_content)
-            self.assertIn(f'"http:request\\n[Request {island} Payload]" -\\ "ee:transform\\n[Set Shanty and Loot]" : ', uml_content)
+            self.assertIn(f'"http:request\\n[Request {island} Payload]" {parallel_arrow} "ee:transform\\n[Set Shanty and Loot]" : ', uml_content)
 
         # Assert first-successful structure
         self.assertIn('par Parallel Logging Competition', uml_content)
         self.assertIn('note over "ee:transform\\n[Set Shanty and Loot]" : First Successful Will Be Used', uml_content)
-        self.assertIn('"logger\\n[First Success]" -\\ "set-payload\\n[Set Payload]" : ', uml_content)
-        self.assertIn('"logger\\n[Second Success]" -\\ "set-payload\\n[Set Payload]" : ', uml_content)
+        self.assertIn(f'"logger\\n[First Success]" {parallel_arrow} "set-payload\\n[Set Payload]" : ', uml_content)
+        self.assertIn(f'"logger\\n[Second Success]" {parallel_arrow} "set-payload\\n[Set Payload]" : ', uml_content)
 
         # Assert parallel-foreach
         self.assertIn('loop Parallel For Each\\nCollection: vars.booty', uml_content)
         self.assertIn('"set-payload\\n[Set Payload]" -> "logger\\n[Booty Value]" : ', uml_content)
+
+    def test_analyzer_control_flows_scatter_with_filtered_loggers_uses_fallback_note(self):
+        """When logger-only routes are filtered, first-successful should not emit empty par/else groups."""
+        flow_name = "control-flows-scatterFlow"
+        flow_source_file = "src\\main\\mule\\control-flows-scatter.xml"
+
+        # Default behavior: loggers are not rendered
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = False
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+
+        # first-successful has logger-only routes in this fixture, so it should collapse to a note
+        self.assertIn(
+            'note over "ee:transform\\n[Set Shanty and Loot]": (first-successful) group (Parallel Logging Competition) not shown as all processors are ignored',
+            uml_content
+        )
+        self.assertNotIn('par Parallel Logging Competition', uml_content)
+
+    def test_analyzer_control_flows_scatter_with_ignored_group_note_disabled(self):
+        """Fallback note should be suppressed when verbose.ignored_group_note is disabled."""
+        flow_name = "control-flows-scatterFlow"
+        flow_source_file = "src\\main\\mule\\control-flows-scatter.xml"
+
+        # Logger-only routes remain filtered, and fallback note is explicitly disabled.
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = False
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['ignored_group_note'] = False
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+
+        self.assertNotIn(
+            'note over "ee:transform\\n[Set Shanty and Loot]": (first-successful) group (Parallel Logging Competition) not shown as all processors are ignored',
+            uml_content
+        )
+        self.assertNotIn('par Parallel Logging Competition', uml_content)
 
     def test_analyzer_text_output(self):
         """Test analyzer text output"""

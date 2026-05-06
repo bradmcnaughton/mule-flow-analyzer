@@ -79,6 +79,7 @@ DEFAULT_PROPERTIES = {
             'logging': False, # Include logging and tracing processors in the diagram
             'errors': False, # Include the error handler processors in the diagram
             'notes': True, # Include documentation tag as a Note on the actor
+            'ignored_group_note': True, # Include a fallback note when control-flow groups are omitted because all processors are ignored
         },
         'arrows': {
             'flow': '->',
