@@ -1,0 +1,49 @@
+@startuml
+scale max 4000 width
+'start formatting
+skinparam monochrome false
+skinparam ArrowThickness 2
+skinparam participant {
+RoundCorner 20
+}
+skinparam {
+wrapWidth 200
+maxMessageSize 300
+}
+'end formatting
+box #LightBlue-6FBBD3
+participant "http:basic-security-filter\n[Basic security filter]"
+participant "ee:transform\n[Set Variable: myMainVar1]"
+participant "ee:transform\n[Set Variable: mySubflowVar]"
+participant "ee:transform\n[Set Variable: myMainVar2]"
+participant "ee:transform\n[Set Variable: mySubflowVar2]"
+participant "sftp:read\n[Read File for Payload]"
+participant "set-payload\n[Set Payload]"
+end box
+participant "<size:30><&globe>\nHTTP" as HTTP
+participant "<size:30><&file>\nLocalFileServer SFTP" as LocalFileServer
+title analyzer-test-nested-flowrefs
+ -> "http:basic-security-filter\n[Basic security filter]" ** : 
+"http:basic-security-filter\n[Basic security filter]" -> "HTTP" ** : HTTP Request (Basic security filter)
+"HTTP" --> "http:basic-security-filter\n[Basic security filter]" : 
+"http:basic-security-filter\n[Basic security filter]" -> "ee:transform\n[Set Variable: myMainVar1]" ** : 
+"ee:transform\n[Set Variable: myMainVar1]" -> "ee:transform\n[Set Variable: myMainVar1]" : message.set attributes
+"ee:transform\n[Set Variable: myMainVar1]" -> "ee:transform\n[Set Variable: myMainVar1]" : variables.variableName: myMainVar1
+group sub-flow set-mySubflowVar-subflow
+"ee:transform\n[Set Variable: myMainVar1]" -> "ee:transform\n[Set Variable: mySubflowVar]" ** : 
+"ee:transform\n[Set Variable: mySubflowVar]" -> "ee:transform\n[Set Variable: mySubflowVar]" : variables.variableName: mySubflowVar
+end
+"ee:transform\n[Set Variable: mySubflowVar]" -> "ee:transform\n[Set Variable: myMainVar2]" ** : 
+"ee:transform\n[Set Variable: myMainVar2]" -> "ee:transform\n[Set Variable: myMainVar2]" : variables.variableName: myMainVar2
+"ee:transform\n[Set Variable: myMainVar2]" -> "ee:transform\n[Set Variable: myMainVar2]" : variables.variableName: undocumentedVariable
+group sub-flow set-mySubflowVar2-subflow
+"ee:transform\n[Set Variable: myMainVar2]" -> "ee:transform\n[Set Variable: mySubflowVar2]" ** : 
+"ee:transform\n[Set Variable: mySubflowVar2]" -> "ee:transform\n[Set Variable: mySubflowVar2]" : variables.variableName: mySubflowVar2
+group sub-flow read-file-subflow
+"ee:transform\n[Set Variable: mySubflowVar2]" -> "sftp:read\n[Read File for Payload]" ** : 
+"sftp:read\n[Read File for Payload]" -> "LocalFileServer" ** : File Transfer: (Read)
+"LocalFileServer" --> "sftp:read\n[Read File for Payload]" : 
+end
+"sftp:read\n[Read File for Payload]" -> "set-payload\n[Set Payload]" ** : 
+end
+@enduml
