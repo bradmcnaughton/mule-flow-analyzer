@@ -3,16 +3,38 @@ from .constants import OutputFormat
 DEFAULT_PROPERTIES = {
     'analyzer_properties': {
         'output_type': OutputFormat.SEQUENCE,
+        # Sequence diagram syntax engine. PlantUML remains the default for
+        # backwards compatibility.
+        'diagram_engine': 'plantuml',
         'plantuml': {
+            # mode can be:
+            # - server: HTTP PlantUML server (local Docker-hosted or remote hosted)
+            # - jar: local java -jar plantuml.jar rendering
+            # - cli: local plantuml executable rendering
+            'mode': 'server',
             'server': 'http://localhost:8087/',
             # Uncomment for prod - 
             # 'server': 'https://www.plantuml.com/plantuml/',
+            'java_command': 'java',
+            'jar_path': './tools/plantuml.jar',
+            'cli_command': 'plantuml',
             'format': 'png',
             'output_directory': './output/plantuml'
         },
+        'mermaid': {
+            # mode can be:
+            # - file: write Mermaid source only
+            # - cli: render through Mermaid CLI (mmdc)
+            'mode': 'file',
+            'cli_command': 'mmdc',
+            'format': 'svg',
+            'output_directory': './output/mermaid',
+            'source_extension': 'mmd'
+        },
         'logging': {
             'level': 'INFO',
-            'file': '/tmp/mfa-logs/mule_flow_analyzer.log',
+            # Relative to process working directory unless overridden via user_config / YAML
+            'file': 'mfa-logs/mule_flow_analyzer.log',
             #'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             # Uncomment for prod - 
             'format': '%(asctime)s - %(levelname)s - %(message)s'
@@ -57,6 +79,7 @@ DEFAULT_PROPERTIES = {
             'logging': False, # Include logging and tracing processors in the diagram
             'errors': False, # Include the error handler processors in the diagram
             'notes': True, # Include documentation tag as a Note on the actor
+            'ignored_group_note': True, # Include a fallback note when control-flow groups are omitted because all processors are ignored
         },
         'arrows': {
             'flow': '->',

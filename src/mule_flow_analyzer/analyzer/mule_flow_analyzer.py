@@ -3,7 +3,7 @@ import os
 import xmltodict
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, NewType
+from typing import Dict, NewType, Optional
 import yaml
 import re
 import copy
@@ -12,6 +12,7 @@ from ..config.default_properties import DEFAULT_PROPERTIES
 from ..config.constants import OutputFormat
 from .mule_flow_element import MuleFlowElement
 from .sequence_diagram_generator import SequenceDiagramGenerator
+from .mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -20,26 +21,26 @@ PropertyHierarchy = NewType('PropertyHierarchy', Dict[int, str])
 
 try:
     ALWAYS_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('always_processors', [])
-except:
+except Exception:
     ALWAYS_PROCESSOR_TAGS = []
 
 try:
     NEVER_PROCESSOR_TAGS = DEFAULT_PROPERTIES.get('analyzer_properties', {}).get('tag_rules', {}).get('never_processors', [])
-except:
+except Exception:
     NEVER_PROCESSOR_TAGS = []
 
 class MuleFlowAnalyzer:
     
     def __init__(self, project_path: str = None, property_files: PropertyHierarchy = None, user_config: dict = None):
         """
-        Initialize a MuleFlowAnalyzer instance for analyzing MuleSoft projects.
+        Initialize a MuleFlowAnalyzer instance for analyzing Mule projects.
 
         This constructor sets up the analyzer with project configuration, property files,
         and user-defined settings. It can handle both complete project initialization
         and deferred initialization where paths and properties are set later.
 
         Args:
-            project_path (str, optional): Path to the root of the MuleSoft project.
+            project_path (str, optional): Path to the root of the Mule project.
                                         If provided, initializes project files and properties.
             property_files (PropertyHierarchy, optional): Dictionary mapping priority (int) to
                                                         property file paths (str) relative to
@@ -48,7 +49,7 @@ class MuleFlowAnalyzer:
                                         Will be merged with DEFAULT_PROPERTIES.
 
         Attributes:
-            project_path (str): Root path of the MuleSoft project
+            project_path (str): Root path of the Mule project
             project_files (dict): Dictionary of discovered Mule configuration files
             properties_hierarchy (PropertyHierarchy): Ordered hierarchy of property files
             configuration_properties (dict): Merged default and user configuration
@@ -87,7 +88,7 @@ class MuleFlowAnalyzer:
         if user_config:
             self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, user_config)
         else:
-            self.configuration_properties = DEFAULT_PROPERTIES
+            self.configuration_properties = copy.deepcopy(DEFAULT_PROPERTIES)
 
         # Output Type Flag - will be replaced with actual input flag later
         self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
@@ -109,13 +110,13 @@ class MuleFlowAnalyzer:
 
     def set_project_path(self, project_path: str):
         """
-        Set or update the MuleSoft project path and initialize project resources.
+        Set or update the Mule project path and initialize project resources.
 
         This method allows for deferred or updated project path initialization. It validates
         the project structure, discovers Mule configuration files, and processes property files.
 
         Args:
-            project_path (str): Path to the root of the MuleSoft project directory.
+            project_path (str): Path to the root of the Mule project directory.
                               Must contain a valid src/main/mule structure.
 
         Raises:
@@ -213,7 +214,7 @@ class MuleFlowAnalyzer:
         
         mule_dir = path / "src" / "main" / "mule"
         if not mule_dir.is_dir():
-            raise ValueError(f"Invalid MuleSoft project structure. Missing src/main/mule directory at: {path}. Ensure the utility is run from the root of the MuleSoft project, or with the -p flag pointing to the root of a MuleSoft project.")
+            raise ValueError(f"Invalid Mule project structure. Missing src/main/mule directory at: {path}. Ensure the utility is run from the root of the Mule project, or with the -p flag pointing to the root of a Mule project.")
         
         xml_files = list(mule_dir.glob("**/*.xml"))
         if not xml_files:
@@ -221,7 +222,7 @@ class MuleFlowAnalyzer:
         
         mule_files = [f for f in xml_files if self._is_mule_file(f)]
         if not mule_files:
-            raise ValueError(f"Zero MuleSoft configuration files (XML file with a 'mule' element) were found in {mule_dir}")
+            raise ValueError(f"Zero Mule configuration files (XML file with a 'mule' element) were found in {mule_dir}")
 
     def _is_mule_file(self, file_path: Path) -> bool:
         try:
@@ -242,17 +243,24 @@ class MuleFlowAnalyzer:
                 try:
                     if self._is_mule_file(xml_file):
                         relative_path = xml_file.relative_to(self.project_path)
+                        normalized_relative_path = self._normalize_project_file_key(relative_path)
                         with xml_file.open('r', encoding='utf-8') as f:
-                            self.project_files[str(relative_path)] = f.read()
+                            self.project_files[normalized_relative_path] = f.read()
                 except Exception as e:
                     logger.error(f"Error processing XML file {xml_file}: {str(e)}")
         except Exception as e:
             logger.error(f"Error discovering project files: {str(e)}")
             raise
 
+    def _normalize_project_file_key(self, file_path: str) -> str:
+        """
+        Normalize project file keys to POSIX-style separators for cross-platform consistency.
+        """
+        return str(file_path).replace("\\", "/")
+
     # Recursive Helper Function to convert XML Text to a MuleFlowElement
     def xml_to_mule_flow_element(self, xml_string):
-        def create_mule_flow_element(element: ET.Element) -> MuleFlowElement | None:
+        def create_mule_flow_element(element: ET.Element) -> Optional[MuleFlowElement]:
             def process_tag_or_attribute(name):
                 parts = name.split('}')
                 if len(parts) > 1:
@@ -282,7 +290,8 @@ class MuleFlowAnalyzer:
             processes = []
 
             for child in element:
-                if len(child) > 0 or not child.get('attributes', None) or len(child.get('text', '').strip()) > 0:
+                text_stripped = (child.text or '').strip()
+                if len(child) > 0 or bool(child.attrib) or text_stripped:
                     new_child = create_mule_flow_element(child)
                     if new_child is not None:
 
@@ -299,18 +308,22 @@ class MuleFlowAnalyzer:
                         else:
                             children.append(new_child)
 
-            # Check if the element has an error-handler
+            # Check if the element has an error-handler (only the first is lifted out; rest stay)
             error_handler_ref = None
             error_handler_element = None
+            pruned_children = []
+            first_error_handler_only = True
             for child in children:
-                if child.tag == 'error-handler':
+                if child.tag == 'error-handler' and first_error_handler_only:
+                    first_error_handler_only = False
                     if child.attributes.get('ref', None):
                         error_handler_ref = child.attributes.get('ref')
                     elif len(child.children) > 0:
                         error_handler_ref = "Inline Error Handler"
                         error_handler_element = child
-                    children.remove(child)
-                    break
+                    continue
+                pruned_children.append(child)
+            children = pruned_children
             
             if element.text and element.text.strip():
                 content = element.text.strip()
@@ -355,7 +368,7 @@ class MuleFlowAnalyzer:
         if self.properties_hierarchy is None:
             self.properties_hierarchy = PropertyHierarchy({})
 
-        for file_pattern in ["**/*.properties", "**/*.yaml"]:
+        for file_pattern in ["**/*.properties", "**/*.yaml", "**/*.yml"]:
             for prop_file in resources_dir.glob(file_pattern):
                 relative_path = prop_file.relative_to(resources_dir)
                 if str(relative_path) not in self.properties_hierarchy.values():
@@ -364,20 +377,6 @@ class MuleFlowAnalyzer:
 
     def get_properties_hierarchy(self) -> PropertyHierarchy:
         return self.properties_hierarchy
-
-    """
-    def set_properties_hierarchy(self, property_files: PropertyHierarchy):
-        resources_dir = Path(self.project_path) / "src" / "main" / "resources"
-        
-        for index, file_path in property_files.items():
-            full_path = resources_dir / file_path
-            if not full_path.is_file():
-                raise ValueError(f"Property file not found: {full_path}")
-            if not os.access(full_path, os.R_OK):
-                raise ValueError(f"Property file is not readable: {full_path}")
-        
-        self.properties_hierarchy = property_files
-    """
 
     def _discover_properties_keys(self):
         try:
@@ -390,7 +389,9 @@ class MuleFlowAnalyzer:
                     full_path = resources_dir / file_path
                     self.discovered_properties[str(full_path)] = {}
 
-                    if file_path.endswith('.properties'):
+                    file_suffix = Path(file_path).suffix.lower()
+
+                    if file_suffix == '.properties':
                         with open(full_path, 'r', encoding='utf-8') as file:
                             for line in file:
                                 try:
@@ -403,7 +404,7 @@ class MuleFlowAnalyzer:
                                     logger.warning(f"Invalid property line in {file_path}: {line.strip()}")
                                     continue
 
-                    elif file_path.endswith('.yaml'):
+                    elif file_suffix in ['.yaml', '.yml']:
                         try:
                             with open(full_path, 'r', encoding='utf-8') as file:
                                 yaml_data = yaml.safe_load(file)
@@ -443,8 +444,10 @@ class MuleFlowAnalyzer:
         Note:
             - Keys in the flattened dictionary maintain their hierarchy through dot notation
             - This is commonly used to convert YAML property files to a format compatible with
-              MuleSoft's property placeholder resolution
+              Mule-style property placeholder resolution
         """
+        if d is None or not isinstance(d, dict):
+            return {}
         items = []
         for k, v in d.items():
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -514,7 +517,8 @@ class MuleFlowAnalyzer:
         Returns:
             None
         """
-        mule_flow_element = self.project_files[xml_file]
+        normalized_xml_file = self._normalize_project_file_key(xml_file)
+        mule_flow_element = self.project_files[normalized_xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows. Else, returns ALL FLOWS in the xml file that has a flow with the name matching the flow_name
 
         # Process all flows in the file
@@ -665,6 +669,19 @@ class MuleFlowAnalyzer:
             elif self.output_format == OutputFormat.SEQUENCE:
                 self.generate_sequence_diagram(xml_file, flow_name)
 
+    def _get_sequence_diagram_generator(self):
+        diagram_engine = self.configuration_properties.get('analyzer_properties', {}).get('diagram_engine', 'plantuml')
+        diagram_engine = str(diagram_engine).strip().lower()
+
+        if diagram_engine == 'plantuml':
+            return SequenceDiagramGenerator(self.configuration_properties)
+        if diagram_engine == 'mermaid':
+            return MermaidSequenceDiagramGenerator(self.configuration_properties)
+
+        raise ValueError(
+            f"Unsupported diagram engine '{diagram_engine}'. Supported engines are: plantuml, mermaid."
+        )
+
     def generate_sequence_diagram(self, xml_file: str, flow_name: str = None):
         """
         Generate sequence diagrams for Mule flows in the specified XML file.
@@ -686,10 +703,11 @@ class MuleFlowAnalyzer:
             SequenceDiagramGenerator configuration.
         """
         
-        mule_flow_element = self.project_files[xml_file]
+        normalized_xml_file = self._normalize_project_file_key(xml_file)
+        mule_flow_element = self.project_files[normalized_xml_file]
         flows = mule_flow_element.get_flows(flow_name) # If flow_name is None, returns all flows
         
-        mule_sequence_diagram_generator = SequenceDiagramGenerator(self.configuration_properties)
+        mule_sequence_diagram_generator = self._get_sequence_diagram_generator()
 
         for flow in flows:
             logger.info(f"Processing sequence for flow: {flow.attributes.get('name')}")

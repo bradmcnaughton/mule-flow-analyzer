@@ -2,7 +2,7 @@
 
 Overriding configuration options is possible with a YAML file. The following example shows all possible options being overriden. None are mandatory. Only include what you want to override.
 
-Typically the most common options to override are the PlantUML server address and port, and the logging directory.
+Typically the most common options to override are the sequence diagram engine, PlantUML or Mermaid renderer settings, and the log file path (`analyzer_properties.logging.file`). PlantUML is the recommended sequence diagram output. Mermaid support is experimental and may not represent every Mule flow construct or formatting feature as accurately as PlantUML. The default log file path is relative to the current working directory when the process starts.
 
 Depending on your implementation, the tag_rules may be useful to override if processors are being treated as participants or not.
 
@@ -16,13 +16,26 @@ Gradients should be specified as color1(/|\-)color2 without hashes. E.G. `LightB
 
 ```yaml
 analyzer_properties:
+  diagram_engine: "plantuml" # "plantuml" (default, recommended) or "mermaid" (experimental)
+
   plantuml:
+    mode: "server" # "server" (HTTP), "jar" (local java -jar), or "cli" (local plantuml executable)
     server: "http://my-plantuml-server:8080/" # A PlantUML server URL
+    java_command: "java" # Only used in mode: jar
+    jar_path: "./tools/plantuml.jar" # Only used in mode: jar
+    cli_command: "plantuml" # Only used in mode: cli
     output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
+
+  mermaid: # Experimental sequence diagram output
+    mode: "file" # "file" writes .mmd only, "cli" renders with Mermaid CLI
+    cli_command: "mmdc" # Only used in mode: cli
+    format: "svg" # Only used in mode: cli
+    output_directory: "./custom-output/mermaid"
+    source_extension: "mmd"
 
   logging:
     level: "INFO"
-    file: "/tmp/mfa-logs/mule_flow_analyzer.log"
+    file: "mfa-logs/mule_flow_analyzer.log" # relative to cwd, or use an absolute path
 
   tag_rules:
     # A "Processor" is an action that a participant can perform on itself.
@@ -59,7 +72,10 @@ analyzer_properties:
         "mule-apikit",
       ]
 
-  # Formatting options for the diagram
+  # Formatting options for the diagram.
+  # These are fully supported by PlantUML. Mermaid uses the semantic parts
+  # where possible, but ignores PlantUML-only styling such as skinparam,
+  # colors, scale, and actor icons.
 diagram_formatting_properties:
   skinparam:
     # The skinparam options format the diagram
@@ -81,7 +97,7 @@ diagram_formatting_properties:
   verbose:
     # Verbosity can be tweaked for different aspects. Increasing verbosity leads to bigger diagrams/more output
     processors: True # Include more details about known processors
-    logging: False # Include MuleSoft logging and tracing processors in the diagram (Makes diagrams bigger)
+    logging: False # Include Mule logging and tracing processors in the diagram (Makes diagrams bigger)
     errors: False # Include the error handler processors in the diagram
     notes: True # Include any documentation tag values as a Note on the actor
 
@@ -162,3 +178,16 @@ diagram_formatting_properties:
     label-color: "gold" # Color of the try scope label
     background-color: "transparent" # Background color of the try scope
 ```
+
+## Mermaid Compatibility Notes
+
+Mermaid sequence output focuses on preserving the flow structure and interactions. It maps choices to `alt` / `else`, scatter-gather routes to `par` / `and`, loops to `loop`, and documentation to `Note over`.
+
+Some PlantUML features do not have direct Mermaid equivalents:
+
+- Custom actor icons from `diagram_formatting_properties.actors` are rendered as plain `actor` or `participant` declarations.
+- `skinparam`, `scale`, rounded corners, arrow thickness, and most color settings are ignored.
+- Colored transaction arrows, colored error notes, and colored groups are rendered as plain messages or notes.
+- PlantUML `database`, `queue`, and other participant shapes are rendered as labeled Mermaid participants.
+- The PlantUML legend is skipped for Mermaid.
+- Mermaid CLI rendering depends on the installed Mermaid version. Use a recent `@mermaid-js/mermaid-cli` if you rely on `par`, `actor`, or future Mermaid syntax features.

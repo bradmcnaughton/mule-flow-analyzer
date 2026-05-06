@@ -2,10 +2,16 @@ import os
 import re
 import logging
 import traceback
+import shutil
+import subprocess
 from typing import Dict, List, Optional, Tuple, Any
 from .mule_flow_element import MuleFlowElement
+from ..exceptions import ConfigurationError, RenderingError, DiagramGenerationException
 
 logger = logging.getLogger(__name__)
+
+# Re-export for callers that imported these from this module
+DiagramGenerationError = DiagramGenerationException
 
 CONTROL_FLOW_TAGS = ['choice', 'foreach', 'parallel-foreach', 'round-robin', 'scatter-gather', 'until-successful', 'first-successful']
 CONTROL_FLOW_BOUNDARY_TAGS = ['flow-ref', 'when', 'otherwise', 'on-error-propagate', 'on-error-continue', 'route']
@@ -16,18 +22,6 @@ class ArrowType:
         self.label = label
         self.arrow = arrow 
         self.priority = priority
-
-class DiagramGenerationError(Exception):
-    """Base exception for diagram generation errors"""
-    pass
-
-class RenderingError(DiagramGenerationError):
-    """Raised when diagram rendering fails"""
-    pass
-
-class ConfigurationError(DiagramGenerationError):
-    """Raised when configuration is invalid"""
-    pass
 
 class SequenceDiagramGenerator:
     def __init__(self, configuration_properties: Dict[str, Any]) -> None:
@@ -258,8 +252,7 @@ class SequenceDiagramGenerator:
             
             # inject colour into arrows depending on the tracking vars
             if tracking_vars and 'transaction_stack' in tracking_vars.keys() and len(tracking_vars['transaction_stack']) > 0:
-                arrow_colour = f"[#{
-                    self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
+                arrow_colour = f"[#{self.properties['diagram_formatting_properties']['transactions']['arrows'][len(tracking_vars['transaction_stack'])]}]"
             else:
                 arrow_colour = ""
 
@@ -329,40 +322,57 @@ class SequenceDiagramGenerator:
             transactions_failure_list = ['on-error-propagate', 'raise-error']
 
             skip_end_group = False
+            should_close_control_group = False
+            ignored_group_note_enabled = self.properties['diagram_formatting_properties'].get('verbose', {}).get('ignored_group_note', True)
 
             # Opening Element Checks
             if element.tag in ['flow', 'sub-flow']:
                 if not content[-1].startswith("title"):
                     content.append(f"group {element.tag} {element.attributes.get('name')}")
+                    should_close_control_group = True
                 else:
                     skip_end_group = True
             elif element.tag in ['choice', 'round-robin']:
-                # Do alt branches
-                tracking_vars['choice_stack'].append(element.children)
-                
-                choice_opened = False
                 choice_previous_actor = tracking_vars['previous_actor']
-                
-                # Group is implicitly created by the first choice "alt" and subsequent choices are "else"
-                for choice in tracking_vars['choice_stack'][len(tracking_vars['choice_stack'])-1]:
-                    if not choice_opened:
-                        if element.tag == 'round-robin':
-                            content.append(f"alt Round Robin First Target")
-                            content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name', 'Round Robin')}")
-                        else:
-                            content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
-                        choice_opened = True
-                        content = process_element(choice, content, tracking_vars)
-                    else:
-                        if element.tag == 'round-robin':
-                            content.append(f"else Round Robin Next Target")
-                        else:
-                            content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', "else"))}")
-                        content.append('\'Rest of Choice goes here')
-                        content = process_element(choice, content, tracking_vars)
-                    # Reset the previous actor to the choice actor
-                    
+                visible_choices = []
+
+                # Build each branch first so we can skip empty branches
+                for choice in element.children:
+                    branch_content = []
+                    for choice_child in choice.children:
+                        branch_content = process_element(choice_child, branch_content, tracking_vars)
+                    if branch_content:
+                        visible_choices.append((choice, branch_content, tracking_vars['previous_actor']))
                     tracking_vars['previous_actor'] = choice_previous_actor
+
+                if len(visible_choices) == 0:
+                    if ignored_group_note_enabled:
+                        content.append(
+                            f"note over {self.clean_uml_syntax(choice_previous_actor)}: "
+                            f"({element.tag}) group ({element.attributes.get('documentation:name', element.tag)}) not shown as all processors are ignored"
+                        )
+                elif len(visible_choices) == 1:
+                    _, branch_content, branch_last_actor = visible_choices[0]
+                    content.extend(branch_content)
+                    tracking_vars['previous_actor'] = branch_last_actor
+                else:
+                    should_close_control_group = True
+                    choice_opened = False
+                    for choice, branch_content, _ in visible_choices:
+                        if not choice_opened:
+                            if element.tag == 'round-robin':
+                                content.append("alt Round Robin First Target")
+                                content.append(f"note over {self.clean_uml_syntax(tracking_vars['current_actor'])}: {element.attributes.get('documentation:name', 'Round Robin')}")
+                            else:
+                                content.append(f"alt {self.remove_expression_brackets(choice.attributes.get('expression',''))}")
+                            choice_opened = True
+                        else:
+                            if element.tag == 'round-robin':
+                                content.append("else Round Robin Next Target")
+                            else:
+                                content.append(f"else {self.remove_expression_brackets(choice.attributes.get('expression', 'else'))}")
+                        content.extend(branch_content)
+                        tracking_vars['previous_actor'] = choice_previous_actor
                 
             elif element.tag in ['foreach', 'until-successful', 'parallel-foreach']:
                 # Track the loop event source
@@ -370,34 +380,54 @@ class SequenceDiagramGenerator:
                                               
                 for item in element.children:
                     content = process_element(item, content, tracking_vars)
+                if tracking_vars['loop_event_source'] == element:
+                    # No visible child was rendered, so no loop group was opened.
+                    tracking_vars['loop_event_source'] = None
+                else:
+                    should_close_control_group = True
             elif element.tag in ['scatter-gather', 'first-successful']:
                 # Track the parallel event source
                 tracking_vars['parallel_sources'] = []
                 local_parallel_sources = []
                 parallel_previous_actor = tracking_vars['previous_actor']
+                visible_routes = []
 
-                content.append(f"par {element.attributes.get('documentation:name', element.tag)}")
-                if element.tag == 'first-successful':
-                    content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} : First Successful Will Be Used")
-                routes_opened = False
-
-                # Process the children (route tags)
+                # Build each route first so we can skip empty routes created by filtered processors
                 for route in element.children:
-                    if routes_opened:
-                        content.append("else")
-                        
+                    route_content = []
                     for child in route.children:
-                        content = process_element(child, content, tracking_vars)
-
-                    # Open Routes (to trigger "else" syntax)
-                    routes_opened = True
-                    # Keep track of the last actor of each route to be used as the previous actor for the consolidating route
-                    local_parallel_sources.append(tracking_vars['previous_actor'])
-                    # Reset the previous actor to the parallel source for any future loops
+                        route_content = process_element(child, route_content, tracking_vars)
+                    if route_content:
+                        visible_routes.append((route_content, tracking_vars['previous_actor']))
                     tracking_vars['previous_actor'] = parallel_previous_actor
-                
-                # Add the parallel sources consolidating
-                tracking_vars['parallel_sources'] = local_parallel_sources
+
+                if len(visible_routes) == 0:
+                    if ignored_group_note_enabled:
+                        content.append(
+                            f"note over {self.clean_uml_syntax(parallel_previous_actor)}: "
+                            f"({element.tag}) group ({element.attributes.get('documentation:name', element.tag)}) not shown as all processors are ignored"
+                        )
+                elif len(visible_routes) == 1:
+                    route_content, route_last_actor = visible_routes[0]
+                    content.extend(route_content)
+                    tracking_vars['previous_actor'] = route_last_actor
+                else:
+                    should_close_control_group = True
+                    content.append(f"par {element.attributes.get('documentation:name', element.tag)}")
+                    if element.tag == 'first-successful':
+                        content.append(f"note over {self.clean_uml_syntax(tracking_vars['previous_actor'])} : First Successful Will Be Used")
+
+                    routes_opened = False
+                    for route_content, route_last_actor in visible_routes:
+                        if routes_opened:
+                            content.append("else")
+                        content.extend(route_content)
+                        routes_opened = True
+                        local_parallel_sources.append(route_last_actor)
+                        tracking_vars['previous_actor'] = parallel_previous_actor
+
+                    # Add the parallel sources consolidating
+                    tracking_vars['parallel_sources'] = local_parallel_sources
             
             elif element.tag == 'async':
                 # Don't create a participant for async, show the async processors instead
@@ -452,15 +482,15 @@ class SequenceDiagramGenerator:
                     if loop_element.tag in ['foreach', 'parallel-foreach']:
                         content.append(f"loop {loop_element.attributes.get('documentation:name')}\\nCollection: {loop_element.attributes.get('collection', '')}")
                     elif loop_element.tag == 'until-successful':
-                        until_successful_statment = "loop "
+                        until_successful_statement = "loop "
                         if 'until successful' in loop_element.attributes.get('documentation:name', '').lower(): 
-                            until_successful_statment += loop_element.attributes.get('documentation:name')
+                            until_successful_statement += loop_element.attributes.get('documentation:name')
                         else:
-                            until_successful_statment += "Until Successful - " + loop_element.attributes.get('documentation:name')
+                            until_successful_statement += "Until Successful - " + loop_element.attributes.get('documentation:name')
                         
                         if loop_element.attributes.get('maxRetries', None):
-                            until_successful_statment += f" max retries: {loop_element.attributes.get('maxRetries')}"
-                        content.append(until_successful_statment)
+                            until_successful_statement += f" max retries: {loop_element.attributes.get('maxRetries')}"
+                        content.append(until_successful_statement)
                             
                     # Unset the loop event source
                     tracking_vars['loop_event_source'] = None
@@ -600,7 +630,7 @@ class SequenceDiagramGenerator:
                 tracking_vars['transaction_stack'].pop()
             
             # Ending a Group
-            if not skip_end_group and element.tag in (['flow', 'sub-flow'] + CONTROL_FLOW_TAGS):
+            if not skip_end_group and should_close_control_group and element.tag in (['flow', 'sub-flow'] + CONTROL_FLOW_TAGS):
                 content.append("end")
             else:
                 # Response line
@@ -844,8 +874,113 @@ class SequenceDiagramGenerator:
         """
         return re.sub(r'[^a-zA-Z0-9_-]', '_', flow_name)
 
-    def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
+    def _detect_renderer_mode(self) -> str:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        mode = plantuml_properties.get('mode')
+
+        # Backwards compatibility: if mode is omitted, default to server behavior.
+        if not mode:
+            return 'server'
+
+        mode = str(mode).strip().lower()
+        if mode not in ('server', 'jar', 'cli'):
+            raise ConfigurationError(
+                f"Invalid PlantUML mode '{mode}'. Supported modes are: server, jar, cli."
+            )
+        return mode
+
+    def _render_with_server(self, infile: str, outfile: str) -> Optional[str]:
         from plantweb.render import render_file
+
+        return render_file(
+            infile=infile,
+            outfile=outfile,
+            renderopts={
+                "engine": "plantuml",
+                "format": self.properties['analyzer_properties']['plantuml']['format'],
+                "server": self.properties['analyzer_properties']['plantuml']['server']
+            },
+            cacheopts={
+                "use_cache": False
+            }
+        )
+
+    def _render_with_jar(self, infile: str, outfile: str) -> Optional[str]:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        jar_path = plantuml_properties.get('jar_path')
+        if not jar_path:
+            raise ConfigurationError(
+                "PlantUML mode 'jar' requires analyzer_properties.plantuml.jar_path."
+            )
+
+        java_command = plantuml_properties.get('java_command', 'java')
+        jar_path = os.path.abspath(jar_path)
+        output_dir = os.path.dirname(outfile)
+        output_format = plantuml_properties['format']
+
+        if shutil.which(java_command) is None:
+            raise RenderingError(
+                f"Java command '{java_command}' not found. Install Java or configure analyzer_properties.plantuml.java_command."
+            )
+        if not os.path.isfile(jar_path):
+            raise RenderingError(f"PlantUML jar not found at: {jar_path}")
+
+        cmd = [
+            java_command,
+            "-jar",
+            jar_path,
+            f"-t{output_format}",
+            "-charset",
+            "UTF-8",
+            "-o",
+            output_dir,
+            infile,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            raise RenderingError(
+                f"PlantUML jar rendering failed (exit code {result.returncode}): {stderr}"
+            )
+
+        if not os.path.exists(outfile):
+            raise RenderingError(f"PlantUML jar did not produce expected output: {outfile}")
+        return outfile
+
+    def _render_with_cli(self, infile: str, outfile: str) -> Optional[str]:
+        plantuml_properties = self.properties['analyzer_properties'].get('plantuml', {})
+        cli_command = plantuml_properties.get('cli_command', 'plantuml')
+        output_dir = os.path.dirname(outfile)
+        output_format = plantuml_properties['format']
+
+        if shutil.which(cli_command) is None:
+            raise RenderingError(
+                f"PlantUML CLI command '{cli_command}' not found. Install PlantUML CLI or configure analyzer_properties.plantuml.cli_command."
+            )
+
+        cmd = [
+            cli_command,
+            f"-t{output_format}",
+            "-charset",
+            "UTF-8",
+            "-o",
+            output_dir,
+            infile,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            raise RenderingError(
+                f"PlantUML CLI rendering failed (exit code {result.returncode}): {stderr}"
+            )
+
+        if not os.path.exists(outfile):
+            raise RenderingError(f"PlantUML CLI did not produce expected output: {outfile}")
+        return outfile
+
+    def render_image(self, diagram_syntax: List[str], flow_name: str) -> Optional[str]:
         plantuml_output_directory = self.properties['analyzer_properties']['plantuml']['output_directory']
 
         # Remove special characters from flow_name
@@ -865,21 +1000,23 @@ class SequenceDiagramGenerator:
         except IOError as e:
             raise RenderingError(f"Failed to write diagram file: {e}")
 
+        outfile_path = os.path.join(
+            plantuml_output_directory,
+            f"{flow_name_file_name}.{self.properties['analyzer_properties']['plantuml']['format']}"
+        )
+
         try:
-            outfile = render_file(
-                infile=infile,
-                outfile=os.path.join(plantuml_output_directory, f"{flow_name_file_name}.{self.properties['analyzer_properties']['plantuml']['format']}"),
-                renderopts={
-                    "engine": "plantuml", 
-                    "format": self.properties['analyzer_properties']['plantuml']['format'],
-                    "server": self.properties['analyzer_properties']['plantuml']['server']
-                },
-                cacheopts={
-                    "use_cache": False
-                }
-            )
+            mode = self._detect_renderer_mode()
+            if mode == 'server':
+                outfile = self._render_with_server(infile, outfile_path)
+            elif mode == 'jar':
+                outfile = self._render_with_jar(infile, outfile_path)
+            else:
+                outfile = self._render_with_cli(infile, outfile_path)
         except Exception as e:
-            logger.error(f"Error rendering diagram for flow {flow_name}. Plant UML may be unreachable or down. Syntax saved to {infile}.")
+            logger.error(
+                f"Error rendering diagram for flow {flow_name}. Syntax saved to {infile}."
+            )
             logger.debug(f"{str(e)}")
             logger.debug(f"{traceback.format_exc()}")
             return None

@@ -21,12 +21,14 @@ class MuleFlowElement:
             
             self.tag = tag
             
-            # Clean up dataweave markers on strings
+            # Copy so callers' dicts are not mutated; clean up DataWeave markers on strings
+            self.attributes = {}
             if attributes:
                 for key, value in attributes.items():
-                    if value.startswith('#[') and value.endswith(']') and ' ' not in value:
-                        attributes[key] = value[2:-1]
-            self.attributes = attributes or {}
+                    if isinstance(value, str) and value.startswith('#[') and value.endswith(']') and ' ' not in value:
+                        self.attributes[key] = value[2:-1]
+                    else:
+                        self.attributes[key] = value
             self.children = children or []
             self.processes = processes or []
             self.content = content

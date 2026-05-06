@@ -3,14 +3,17 @@ from pathlib import Path
 import os
 import shutil
 import random
+import copy
 import yaml
 from unittest.mock import patch, MagicMock
-from src.mulesoft_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
-from src.mulesoft_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
-from src.mulesoft_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
+from mule_flow_analyzer.analyzer.sequence_diagram_generator import SequenceDiagramGenerator, ConfigurationError
+from mule_flow_analyzer.analyzer.mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
+from mule_flow_analyzer.analyzer.mule_flow_analyzer import MuleFlowAnalyzer
+from mule_flow_analyzer.analyzer.mule_flow_element import MuleFlowElement
+from mule_flow_analyzer.config.default_properties import DEFAULT_PROPERTIES
 from io import StringIO
 import sys
-from src.mulesoft_flow_analyzer.config.constants import OutputFormat
+from mule_flow_analyzer.config.constants import OutputFormat
 
 class TestSequenceDiagramGenerator(unittest.TestCase):
     @classmethod
@@ -20,8 +23,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         cls.output_dir = Path('tests/output/plantuml')
         cls.log_dir = Path('tests/output/logs')
         
-        # Overwrite Default Properties with some testing specific properties
-        test_properties = DEFAULT_PROPERTIES
+        # Isolated copy so tests do not mutate the module-level DEFAULT_PROPERTIES
+        test_properties = copy.deepcopy(DEFAULT_PROPERTIES)
         test_properties['analyzer_properties']['plantuml']['output_directory'] = cls.output_dir
         test_properties['analyzer_properties']['logging']['file'] = cls.log_dir / 'test_mule_flow_analyzer.log'
 
@@ -192,6 +195,9 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         Returns:
             - List of UML content lines
         """
+        # Keep analyzer in sync with class-level analyzer_properties (e.g. verbose.logging toggles)
+        self.analyzer.set_configuration_properties(self.analyzer_properties)
+
         # Get the flow from the source files
         self.analyzer.analyze_mule_flows(flow_name=flow_name)
 
@@ -233,8 +239,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
                           f"Participant at line {participant_idx} should be between box lines {box_start_idx} and {box_end_idx}")
 
         # Assert that the HTTP and LocalFileServer actors are present
-        self.assertIn(f'participant "<size:30>{self.analyzer_properties['diagram_formatting_properties']['actors']['http']}\\nHTTP" as HTTP', uml_content)
-        self.assertIn(f'participant "<size:30>{self.analyzer_properties['diagram_formatting_properties']['actors']['file']}\\nLocalFileServer SFTP" as LocalFileServer', uml_content)       
+        self.assertIn(f'participant "<size:30>{self.analyzer_properties["diagram_formatting_properties"]["actors"]["http"]}\\nHTTP" as HTTP', uml_content)
+        self.assertIn(f'participant "<size:30>{self.analyzer_properties["diagram_formatting_properties"]["actors"]["file"]}\\nLocalFileServer SFTP" as LocalFileServer', uml_content)       
 
         # Assert that the arrows are present
         self.assertIn(' -> "http:basic-security-filter\\n[Basic security filter]" : ', uml_content)
@@ -510,8 +516,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('loop Until Successful - Never Give Up max retries: 99999', uml_content)
 
         # Assert HTTP request
-        cow_tunes_path = "tests\\mule\\analyzer-tests\\src\\main\\resources\\properties\\dummy.yaml"
-        with open(cow_tunes_path, 'r') as file:
+        cow_tunes_path = Path("tests/mule/analyzer-tests/src/main/resources/properties/dummy.yaml")
+        with cow_tunes_path.open('r', encoding='utf-8') as file:
             dummy_yaml = yaml.safe_load(file)
         cow_tunes_path_value = dummy_yaml['cow']['tunes']['path']
         
@@ -711,22 +717,57 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('end', uml_content)
 
         # Assert HTTP requests for each route
+        parallel_arrow = self.analyzer_properties["diagram_formatting_properties"]["arrows"]["parallel"]
         for island in ['Tatooga', 'Bermuda', 'Aruba']:
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.body', uml_content)
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.uri params', uml_content)
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "HTTP_1" : HTTP Request: (GET /islands/{{island-name}})', uml_content)
             self.assertIn(f'"HTTP_1" --> "http:request\\n[Request {island} Payload]" : ', uml_content)
-            self.assertIn(f'"http:request\\n[Request {island} Payload]" -\\ "ee:transform\\n[Set Shanty and Loot]" : ', uml_content)
+            self.assertIn(f'"http:request\\n[Request {island} Payload]" {parallel_arrow} "ee:transform\\n[Set Shanty and Loot]" : ', uml_content)
 
         # Assert first-successful structure
         self.assertIn('par Parallel Logging Competition', uml_content)
         self.assertIn('note over "ee:transform\\n[Set Shanty and Loot]" : First Successful Will Be Used', uml_content)
-        self.assertIn('"logger\\n[First Success]" -\\ "set-payload\\n[Set Payload]" : ', uml_content)
-        self.assertIn('"logger\\n[Second Success]" -\\ "set-payload\\n[Set Payload]" : ', uml_content)
+        self.assertIn(f'"logger\\n[First Success]" {parallel_arrow} "set-payload\\n[Set Payload]" : ', uml_content)
+        self.assertIn(f'"logger\\n[Second Success]" {parallel_arrow} "set-payload\\n[Set Payload]" : ', uml_content)
 
         # Assert parallel-foreach
         self.assertIn('loop Parallel For Each\\nCollection: vars.booty', uml_content)
         self.assertIn('"set-payload\\n[Set Payload]" -> "logger\\n[Booty Value]" : ', uml_content)
+
+    def test_analyzer_control_flows_scatter_with_filtered_loggers_uses_fallback_note(self):
+        """When logger-only routes are filtered, first-successful should not emit empty par/else groups."""
+        flow_name = "control-flows-scatterFlow"
+        flow_source_file = "src\\main\\mule\\control-flows-scatter.xml"
+
+        # Default behavior: loggers are not rendered
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = False
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+
+        # first-successful has logger-only routes in this fixture, so it should collapse to a note
+        self.assertIn(
+            'note over "ee:transform\\n[Set Shanty and Loot]": (first-successful) group (Parallel Logging Competition) not shown as all processors are ignored',
+            uml_content
+        )
+        self.assertNotIn('par Parallel Logging Competition', uml_content)
+
+    def test_analyzer_control_flows_scatter_with_ignored_group_note_disabled(self):
+        """Fallback note should be suppressed when verbose.ignored_group_note is disabled."""
+        flow_name = "control-flows-scatterFlow"
+        flow_source_file = "src\\main\\mule\\control-flows-scatter.xml"
+
+        # Logger-only routes remain filtered, and fallback note is explicitly disabled.
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['logging'] = False
+        self.analyzer_properties['diagram_formatting_properties']['verbose']['ignored_group_note'] = False
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+
+        self.assertNotIn(
+            'note over "ee:transform\\n[Set Shanty and Loot]": (first-successful) group (Parallel Logging Competition) not shown as all processors are ignored',
+            uml_content
+        )
+        self.assertNotIn('par Parallel Logging Competition', uml_content)
 
     def test_analyzer_text_output(self):
         """Test analyzer text output"""
@@ -777,6 +818,193 @@ flow [control-flows-until-successful]
 
         # Assert the output matches expected structure
         self.assertEqual(output.strip(), expected_output.strip())
+
+    def test_renderer_mode_defaults_to_server_for_backwards_compatibility(self):
+        """If mode is omitted, rendering should default to server mode."""
+        config_without_mode = copy.deepcopy(self.analyzer_properties)
+        config_without_mode['analyzer_properties']['plantuml'].pop('mode', None)
+        generator = SequenceDiagramGenerator(configuration_properties=config_without_mode)
+        self.assertEqual(generator._detect_renderer_mode(), 'server')
+
+    def test_renderer_mode_validation_rejects_invalid_mode(self):
+        """Invalid PlantUML mode should raise ConfigurationError."""
+        invalid_mode_config = copy.deepcopy(self.analyzer_properties)
+        invalid_mode_config['analyzer_properties']['plantuml']['mode'] = 'invalid-mode'
+        generator = SequenceDiagramGenerator(configuration_properties=invalid_mode_config)
+        with self.assertRaises(ConfigurationError):
+            generator._detect_renderer_mode()
+
+    def test_render_image_dispatches_based_on_mode(self):
+        """render_image should dispatch to the correct renderer backend."""
+        syntax = ["@startuml", "Alice -> Bob : hello", "@enduml"]
+
+        for mode, expected_backend in [('server', '_render_with_server'), ('jar', '_render_with_jar'), ('cli', '_render_with_cli')]:
+            with self.subTest(mode=mode):
+                config = copy.deepcopy(self.analyzer_properties)
+                config['analyzer_properties']['plantuml']['mode'] = mode
+                config['analyzer_properties']['plantuml']['output_directory'] = self.output_dir
+                generator = SequenceDiagramGenerator(configuration_properties=config)
+                fake_outfile = str(self.output_dir / f"{mode}.png")
+
+                with patch.object(generator, '_render_with_server', return_value=fake_outfile) as mock_server, \
+                     patch.object(generator, '_render_with_jar', return_value=fake_outfile) as mock_jar, \
+                     patch.object(generator, '_render_with_cli', return_value=fake_outfile) as mock_cli:
+                    result = generator.render_image(syntax, f"dispatch-{mode}")
+                    self.assertEqual(result, fake_outfile)
+
+                    called = {
+                        '_render_with_server': mock_server.called,
+                        '_render_with_jar': mock_jar.called,
+                        '_render_with_cli': mock_cli.called
+                    }
+                    self.assertTrue(called[expected_backend], f"{expected_backend} should be called for mode={mode}")
+                    for backend, was_called in called.items():
+                        if backend != expected_backend:
+                            self.assertFalse(was_called, f"{backend} should not be called for mode={mode}")
+
+    def test_mermaid_generator_creates_sequence_syntax(self):
+        """Mermaid generator should emit sequenceDiagram syntax."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'test-flow'},
+            children=[
+                MuleFlowElement('http:listener', {'config-ref': 'HTTP_CONFIG', 'path': '/orders'}),
+                MuleFlowElement('choice', {}, children=[
+                    MuleFlowElement('when', {'expression': '#[payload.valid]'}, children=[
+                        MuleFlowElement('db:select', {'config-ref': 'DB_CUSTOMER_CONFIG'}),
+                    ]),
+                    MuleFlowElement('otherwise', {}, children=[
+                        MuleFlowElement('logger', {'message': 'invalid'}),
+                    ]),
+                ]),
+                MuleFlowElement('async', {}, children=[
+                    MuleFlowElement('http:request', {'config-ref': 'HTTP_DOWNSTREAM', 'method': 'POST', 'path': '/notify'}),
+                ]),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertEqual(mermaid_content[0], 'sequenceDiagram')
+        self.assertEqual(mermaid_content[1], 'title test-flow')
+        self.assertIn('box Consumers', mermaid_content)
+        self.assertIn('actor HTTP as Consumer - HTTP', mermaid_content)
+        self.assertIn('box Mule Components', mermaid_content)
+        self.assertIn('participant http_listener as Mule - http:listener', mermaid_content)
+        self.assertIn('box Providers', mermaid_content)
+        self.assertIn('participant HTTP_DOWNSTREAM as Provider - HTTP DOWNSTREAM', mermaid_content)
+        self.assertIn('alt payload.valid', mermaid_content)
+        self.assertIn('else otherwise', mermaid_content)
+        self.assertIn('Note over http_listener: Async Start', mermaid_content)
+        self.assertTrue(any('HTTP_DOWNSTREAM' in line for line in mermaid_content))
+
+    def test_mermaid_scatter_gather_consolidates_all_parallel_routes(self):
+        """Mermaid scatter-gather output should keep every route endpoint before the join."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'scatter-flow'},
+            children=[
+                MuleFlowElement('http:listener', {'config-ref': 'HTTP_CONFIG', 'path': '/scatter'}),
+                MuleFlowElement('scatter-gather', {'documentation:name': 'Fan Out'}, children=[
+                    MuleFlowElement('route', {}, children=[
+                        MuleFlowElement('set-variable', {'variableName': 'routeA'}),
+                    ]),
+                    MuleFlowElement('route', {}, children=[
+                        MuleFlowElement('set-variable', {'variableName': 'routeB'}),
+                    ]),
+                ]),
+                MuleFlowElement('ee:transform', {'documentation:name': 'Join Routes'}),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertIn('set_variable_routeA ->> ee_transform_Join_Routes: ', mermaid_content)
+        self.assertIn('set_variable_routeB ->> ee_transform_Join_Routes: ', mermaid_content)
+
+    def test_mermaid_transactions_follow_plantuml_start_and_end_semantics(self):
+        """Mermaid transaction notes should only mark actual transaction boundaries."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'transaction-flow'},
+            children=[
+                MuleFlowElement(
+                    'jms:listener',
+                    {
+                        'destination': 'orders',
+                        'transactionalAction': 'ALWAYS_BEGIN',
+                        'transactionType': 'XA',
+                    },
+                ),
+                MuleFlowElement('db:insert', {'config-ref': 'DB_A', 'transactionalAction': 'ALWAYS_JOIN'}),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+
+        self.assertIn('Note over jms_listener: XA Transaction Starting', mermaid_content)
+        self.assertIn('Note over db_insert: XA Transaction End', mermaid_content)
+        self.assertFalse(any('Local Transaction Starting' in line for line in mermaid_content))
+
+    def test_mermaid_render_file_mode_writes_mmd_source(self):
+        """Mermaid file mode should write source and return the .mmd path."""
+        mermaid_output_dir = Path('tests/output/mermaid')
+        if mermaid_output_dir.exists():
+            shutil.rmtree(mermaid_output_dir)
+
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['mermaid']['output_directory'] = mermaid_output_dir
+        config['analyzer_properties']['mermaid']['mode'] = 'file'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        result = generator.render_image(['sequenceDiagram', 'participant A', 'participant B', 'A ->> B: hello'], 'mermaid-flow')
+
+        expected_path = mermaid_output_dir / 'mermaid-flow.mmd'
+        self.assertEqual(result, str(expected_path))
+        self.assertTrue(expected_path.exists())
+        self.assertIn('A ->> B: hello', expected_path.read_text())
+        shutil.rmtree(mermaid_output_dir)
+
+    def test_mermaid_render_cli_mode_is_mockable(self):
+        """Mermaid CLI mode should dispatch to the CLI renderer without requiring mmdc in tests."""
+        mermaid_output_dir = Path('tests/output/mermaid-cli')
+        if mermaid_output_dir.exists():
+            shutil.rmtree(mermaid_output_dir)
+
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['mermaid']['output_directory'] = mermaid_output_dir
+        config['analyzer_properties']['mermaid']['mode'] = 'cli'
+        config['analyzer_properties']['mermaid']['format'] = 'svg'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+        fake_outfile = str(mermaid_output_dir / 'mermaid-cli-flow.svg')
+
+        with patch.object(generator, '_render_with_cli', return_value=fake_outfile) as mock_cli:
+            result = generator.render_image(['sequenceDiagram', 'A ->> B: hello'], 'mermaid-cli-flow')
+
+        self.assertEqual(result, fake_outfile)
+        mock_cli.assert_called_once()
+        self.assertTrue((mermaid_output_dir / 'mermaid-cli-flow.mmd').exists())
+        shutil.rmtree(mermaid_output_dir)
+
+    def test_analyzer_selects_mermaid_generator(self):
+        """Analyzer should select Mermaid generator when diagram_engine is mermaid."""
+        analyzer = MuleFlowAnalyzer(user_config={
+            'analyzer_properties': {
+                'output_type': OutputFormat.SEQUENCE,
+                'diagram_engine': 'mermaid',
+            }
+        })
+
+        self.assertIsInstance(analyzer._get_sequence_diagram_generator(), MermaidSequenceDiagramGenerator)
 
 if __name__ == '__main__':
     unittest.main()

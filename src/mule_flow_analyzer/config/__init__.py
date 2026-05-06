@@ -1,5 +1,5 @@
 """
-Configuration module for MuleSoft Flow Analyzer.
+Configuration module for Mule Flow Analyzer.
 
 This module contains configuration-related components including default properties
 and constants used throughout the package.
