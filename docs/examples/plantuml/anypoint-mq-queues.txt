@@ -1,0 +1,31 @@
+@startuml
+scale max 4000 width
+'start formatting
+skinparam monochrome false
+skinparam ArrowThickness 2
+skinparam participant {
+RoundCorner 20
+}
+skinparam {
+wrapWidth 200
+maxMessageSize 300
+}
+'end formatting
+queue "Queue\nmy-test-subscription"
+box #LightBlue-6FBBD3
+participant "anypoint-mq:subscriber\n[Subscriber]"
+participant "anypoint-mq:consume\n[Consume]"
+participant "anypoint-mq:publish\n[Publish]"
+end box
+queue "Queue\nmy-test-queue"
+queue "Queue\nmy-destination"
+'source event
+"Queue\nmy-test-subscription" -> "anypoint-mq:subscriber\n[Subscriber]" : Message (my-test-subscription)
+title anypoint-mq-queues
+"anypoint-mq:subscriber\n[Subscriber]" -> "anypoint-mq:consume\n[Consume]" : 
+"anypoint-mq:consume\n[Consume]" -> "Queue\nmy-test-queue" : Message (my-test-queue)
+"Queue\nmy-test-queue" --> "anypoint-mq:consume\n[Consume]" : 
+"anypoint-mq:consume\n[Consume]" -> "anypoint-mq:publish\n[Publish]" : 
+"anypoint-mq:publish\n[Publish]" -> "Queue\nmy-destination" : Message (my-destination)
+"Queue\nmy-destination" --> "anypoint-mq:publish\n[Publish]" : 
+@enduml

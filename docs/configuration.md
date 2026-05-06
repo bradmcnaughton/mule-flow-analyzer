@@ -1,14 +1,14 @@
 ### Configuration Keys and Values
 
-Overriding configuration options is possible with a YAML file. The following example shows all possible options being overriden. None are mandatory. Only include what you want to override.
+Overriding configuration options is possible with a YAML file. The following is a comprehensive example of common and advanced options. None are mandatory. Only include what you want to override.
 
 Typically the most common options to override are the sequence diagram engine, PlantUML or Mermaid renderer settings, and the log file path (`analyzer_properties.logging.file`). PlantUML is the recommended sequence diagram output. Mermaid support is experimental and may not represent every Mule flow construct or formatting feature as accurately as PlantUML. The default log file path is relative to the current working directory when the process starts.
 
 Depending on your implementation, the tag_rules may be useful to override if processors are being treated as participants or not.
 
-For all formatting, dDon't prefix colors with '#'.
+For most color properties, don't prefix colors with `#`.
 
-E.G. #DD1122 should be `DD1122`
+E.G. `#DD1122` should be `DD1122`
 
 A full list of English names for colors can be found here: https://plantuml.com/en/color
 
@@ -18,12 +18,15 @@ Gradients should be specified as color1(/|\-)color2 without hashes. E.G. `LightB
 analyzer_properties:
   diagram_engine: "plantuml" # "plantuml" (default, recommended) or "mermaid" (experimental)
 
+  output_type: "SEQUENCE" # Optional output type
+
   plantuml:
     mode: "server" # "server" (HTTP), "jar" (local java -jar), or "cli" (local plantuml executable)
     server: "http://my-plantuml-server:8080/" # A PlantUML server URL
     java_command: "java" # Only used in mode: jar
     jar_path: "./tools/plantuml.jar" # Only used in mode: jar
     cli_command: "plantuml" # Only used in mode: cli
+    format: "png"
     output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
 
   mermaid: # Experimental sequence diagram output
@@ -36,12 +39,13 @@ analyzer_properties:
   logging:
     level: "INFO"
     file: "mfa-logs/mule_flow_analyzer.log" # relative to cwd, or use an absolute path
+    format: "%(asctime)s - %(levelname)s - %(message)s"
 
   tag_rules:
     # A "Processor" is an action that a participant can perform on itself.
     # It adds helpful detail to the diagram
     # ------------------------------------------------------------------------------------------------
-    # By default, procesors are detected by a shared xml namespace prefix.
+    # By default, processors are detected by a shared xml namespace prefix.
     # Some Mule tags don't have a namespace prefix, the 'always_processors' will force them to be treated as processors.
     always_processors:
       [
@@ -100,9 +104,10 @@ diagram_formatting_properties:
     logging: False # Include Mule logging and tracing processors in the diagram (Makes diagrams bigger)
     errors: False # Include the error handler processors in the diagram
     notes: True # Include any documentation tag values as a Note on the actor
+    ignored_group_note: True # Include a fallback note when control-flow groups are omitted because all processors are ignored
 
   # Controls diagram scaling to prevent cutoff. Use a smaller value if you prefer smaller diagrams.
-  scale: "scale max 4096 width"
+  scale: "scale max 4000 width"
 
   mule:
     box-color: "LightGreen-4CAF50" # Change Mule box color(s)
@@ -110,16 +115,17 @@ diagram_formatting_properties:
   arrows:
     # Override any of the arrow styles following PlantUML styling
     # See "Change arrow style" at https://plantuml.com/sequence-diagram
-    flow: "=>"
-    return: "==>"
-    async: "=>>"
-    parallel: "=\\"
+    flow: "->"
+    return: "-->"
+    async: "->>"
+    parallel: "-\\"
 
   actors:
     # Override or add new actor icons based on the processor prefix
     # Set any combination of icon and formatting options for specific mule components, by XML namespace prefix
     # Icons will appear on the source/target actors outside the Mule Box
     # Icon names can be found here: https://www.plantuml.com/plantuml/png/SoWkIImgAStDuSh9B2x9BqZDoqpE1s8kXzIy5A0m0000
+    apikit: "<&compass>"
     salesforce: "<color:#00A1E0><&cloud>"
     email: "<&envelope-closed>"
     scheduler: "<&clock>"
@@ -191,3 +197,8 @@ Some PlantUML features do not have direct Mermaid equivalents:
 - PlantUML `database`, `queue`, and other participant shapes are rendered as labeled Mermaid participants.
 - The PlantUML legend is skipped for Mermaid.
 - Mermaid CLI rendering depends on the installed Mermaid version. Use a recent `@mermaid-js/mermaid-cli` if you rely on `par`, `actor`, or future Mermaid syntax features.
+
+### Notes on color values
+
+- For color fields that are inserted as `#<value>` by the generator (for example `diagram_formatting_properties.errors.color` and transaction arrow colors), provide values without `#`.
+- Inline PlantUML formatting strings may include `#` where PlantUML expects it (for example: `diagram_formatting_properties.actors.salesforce: "<color:#00A1E0><&cloud>"`).

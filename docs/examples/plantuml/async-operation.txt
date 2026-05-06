@@ -1,0 +1,50 @@
+@startuml
+scale max 4000 width
+'start formatting
+skinparam monochrome false
+skinparam ArrowThickness 2
+skinparam participant {
+RoundCorner 20
+}
+skinparam {
+wrapWidth 200
+maxMessageSize 300
+}
+'end formatting
+participant "<size:30><color:#00A1E0><&cloud>\nExperience Cloud" as Experience
+box #LightBlue-6FBBD3
+participant "salesforce:subscribe-channel-listener\n[Subscribe channel listener]"
+participant "db:insert\n[Insert Subscription]"
+participant "set-variable\n[customerId]"
+participant "email:send\n[New Subscription Email]"
+participant "db:update\n[Update Subscription Emails]"
+participant "salesforce:delete\n[Delete Subscription]"
+end box
+database "Database\nA"
+participant "<size:30><&envelope-closed>\nSMTP" as Email
+participant "<size:30><color:#00A1E0><&cloud>\nExperience Cloud" as Experience_4
+'source event
+"Experience" -> "salesforce:subscribe-channel-listener\n[Subscribe channel listener]" : subscribe-channel-listener
+title async-operation
+"salesforce:subscribe-channel-listener\n[Subscribe channel listener]" -> "db:insert\n[Insert Subscription]" : 
+"db:insert\n[Insert Subscription]" -> "db:insert\n[Insert Subscription]" : insert.sql
+"db:insert\n[Insert Subscription]" -> "db:insert\n[Insert Subscription]" : insert.input parameters
+"db:insert\n[Insert Subscription]" -> "Database\nA" : Database Change: (Insert)
+"Database\nA" --> "db:insert\n[Insert Subscription]" : 
+"db:insert\n[Insert Subscription]" -> "set-variable\n[customerId]" : 
+group #goldenrod async
+group sub-flow new-subscription-email
+"set-variable\n[customerId]" ->> "email:send\n[New Subscription Email]" : 
+"email:send\n[New Subscription Email]" ->> "Email" : Email Message
+"Email" --> "email:send\n[New Subscription Email]" : 
+"email:send\n[New Subscription Email]" -> "db:update\n[Update Subscription Emails]" : 
+"db:update\n[Update Subscription Emails]" -> "db:update\n[Update Subscription Emails]" : update.sql
+"db:update\n[Update Subscription Emails]" -> "db:update\n[Update Subscription Emails]" : update.input parameters
+"db:update\n[Update Subscription Emails]" -> "Database\nA" : Database Change: (Update)
+"Database\nA" --> "db:update\n[Update Subscription Emails]" : 
+end
+end
+"set-variable\n[customerId]" -> "salesforce:delete\n[Delete Subscription]" : 
+"salesforce:delete\n[Delete Subscription]" -> "Experience_4" : delete
+"Experience_4" --> "salesforce:delete\n[Delete Subscription]" : 
+@enduml
