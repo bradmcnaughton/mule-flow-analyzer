@@ -6,9 +6,10 @@ and constants used throughout the package.
 """
 
 from .default_properties import DEFAULT_PROPERTIES
-from .constants import OutputFormat
+from .constants import OutputFormat, normalize_output_format
 
 __all__ = [
     'DEFAULT_PROPERTIES',
     'OutputFormat',
+    'normalize_output_format',
 ]

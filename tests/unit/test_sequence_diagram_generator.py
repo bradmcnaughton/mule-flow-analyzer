@@ -48,6 +48,12 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         
     def setUp(self):
         """Set up test fixtures before each test"""
+        # Reset mutable settings on the shared class config (individual tests may toggle these)
+        verbose = self.analyzer_properties['diagram_formatting_properties']['verbose']
+        verbose['logging'] = False
+        verbose['ignored_group_note'] = True
+        self.analyzer_properties['analyzer_properties']['output_type'] = OutputFormat.SEQUENCE
+
         # Initialize analyzer with properties file
         self.analyzer = MuleFlowAnalyzer(
             project_path=self.test_files_dir.parent.parent.parent,  # Root of test project
@@ -185,6 +191,162 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertEqual(len(self.generator.arrow_legend), 2)
         self.assertEqual(self.generator.arrow_legend['->'].priority, 0)
 
+    def test_first_diagram_participant_child_skips_leading_loggers(self):
+        """Leading loggers should be skipped when resolving the first diagram participant."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': r'post:\tickets:application\json:config'},
+            children=[
+                MuleFlowElement('logger', {'documentation:name': 'START POST /tickets'}),
+                MuleFlowElement('logger', {'documentation:name': 'POST Payload'}),
+                MuleFlowElement('os:retrieve', {'documentation:name': 'Retrieve Current Ticket'}),
+            ],
+        )
+
+        first = self.generator.first_diagram_participant_child(flow)
+        self.assertEqual(first.tag, 'os:retrieve')
+        self.assertEqual(first.attributes.get('documentation:name'), 'Retrieve Current Ticket')
+
+        logging_config = copy.deepcopy(self.analyzer_properties)
+        logging_config['diagram_formatting_properties']['verbose']['logging'] = True
+        logging_generator = SequenceDiagramGenerator(configuration_properties=logging_config)
+        first_with_logging = logging_generator.first_diagram_participant_child(flow)
+        self.assertEqual(first_with_logging.tag, 'logger')
+
+    def test_apikit_source_event_targets_first_visible_processor_not_logger(self):
+        """APIKit router arrow should target the first rendered processor, not a skipped logger."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': r'post:\tickets:application\json:config'},
+            children=[
+                MuleFlowElement('logger', {'documentation:name': 'START POST /tickets'}),
+                MuleFlowElement('logger', {'documentation:name': 'POST Payload'}),
+                MuleFlowElement('os:retrieve', {'documentation:name': 'Retrieve Current Ticket'}),
+                MuleFlowElement('choice', {'documentation:name': 'Handle Existing'}, children=[
+                    MuleFlowElement('when', {'expression': '#[true]'}, children=[
+                        MuleFlowElement('set-payload', {'documentation:name': 'Set Failed Payload'}),
+                    ]),
+                ]),
+            ],
+        )
+
+        uml_content = self.generator.generate_sequence_diagram_syntax(flow)
+        source_event_lines = [line for line in uml_content if 'APIKit Router' in line]
+
+        self.assertEqual(len(source_event_lines), 1)
+        self.assertIn('os:retrieve', source_event_lines[0])
+        self.assertIn('Retrieve Current Ticket', source_event_lines[0])
+        self.assertNotIn('logger', source_event_lines[0])
+        self.assertNotIn('START POST /tickets', '\n'.join(uml_content))
+
+    def test_mule_target_variable_helpers(self):
+        """Mule target attribute helpers should normalize values and build save labels."""
+        element = MuleFlowElement(
+            'os:retrieve',
+            {'target': 'currentTicketNumber', 'documentation:name': 'Retrieve'},
+        )
+        self.assertEqual(self.generator.mule_target_variable_value(element), 'currentTicketNumber')
+        self.assertEqual(
+            self.generator.mule_target_variable_save_label(element),
+            'Save Output to variable: currentTicketNumber',
+        )
+
+        expression_element = MuleFlowElement('db:select', {'target': '#[vars.recordId]'})
+        self.assertEqual(self.generator.mule_target_variable_value(expression_element), 'vars.recordId')
+
+        empty_element = MuleFlowElement('os:retrieve', {'target': '   '})
+        self.assertIsNone(self.generator.mule_target_variable_value(empty_element))
+
+    def test_processor_with_target_emits_save_variable_self_arrow(self):
+        """Processors with a Mule target attribute should show a save-to-variable self action."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'target-variable-flow'},
+            children=[
+                MuleFlowElement(
+                    'os:retrieve',
+                    {
+                        'documentation:name': 'Retrieve Current Ticket',
+                        'target': 'currentTicketNumber',
+                    },
+                    processes=[
+                        MuleFlowElement('os:default-value', {}, content='1'),
+                    ],
+                ),
+                MuleFlowElement('set-payload', {'documentation:name': 'Set Payload'}),
+            ],
+        )
+
+        uml_content = self.generator.generate_sequence_diagram_syntax(flow)
+        joined = '\n'.join(uml_content)
+
+        self.assertIn('Save Output to variable: currentTicketNumber', joined)
+        self.assertIn(
+            '"os:retrieve\\n[Retrieve Current Ticket]" -> "os:retrieve\\n[Retrieve Current Ticket]" : Save Output to variable: currentTicketNumber',
+            uml_content,
+        )
+        default_line_idx = next(
+            i for i, line in enumerate(uml_content) if 'retrieve.default value' in line
+        )
+        save_line_idx = next(
+            i for i, line in enumerate(uml_content) if 'Save Output to variable: currentTicketNumber' in line
+        )
+        self.assertLess(default_line_idx, save_line_idx)
+
+    def test_apikit_tickets_post_flow_shows_target_variable_save(self):
+        """Regression: tickets POST os:retrieve target attribute appears on the diagram."""
+        flow_name = r'post:\tickets:application\json:tickets-api-spec-config'
+        flow_source_file = 'src\\main\\mule\\tickets-apikit-os.xml'
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+        joined = '\n'.join(uml_content)
+
+        self.assertIn('Save Output to variable: currentTicketNumber', joined)
+        self.assertIn(
+            '"os:retrieve\\n[Retrieve Current Ticket]" -> "os:retrieve\\n[Retrieve Current Ticket]" : Save Output to variable: currentTicketNumber',
+            uml_content,
+        )
+
+    def test_mermaid_processor_with_target_emits_save_variable_self_arrow(self):
+        """Mermaid output should include save-to-variable self action for Mule target attribute."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': r'get:\tickets:config'},
+            children=[
+                MuleFlowElement(
+                    'os:retrieve',
+                    {'documentation:name': 'Retrieve', 'target': 'ticketNumber'},
+                ),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+        joined = '\n'.join(mermaid_content)
+
+        self.assertIn('Save Output to variable: ticketNumber', joined)
+
+    def test_apikit_tickets_post_flow_regression_no_orphan_logger(self):
+        """Regression: tickets APIKit POST flow must not route APIKit to a skipped logger participant."""
+        flow_name = r'post:\tickets:application\json:tickets-api-spec-config'
+        flow_source_file = 'src\\main\\mule\\tickets-apikit-os.xml'
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+        source_event_lines = [line for line in uml_content if 'APIKit Router' in line]
+
+        self.assertEqual(len(source_event_lines), 1)
+        self.assertIn('os:retrieve', source_event_lines[0])
+        self.assertIn('Retrieve Current Ticket', source_event_lines[0])
+        self.assertNotIn('logger', source_event_lines[0])
+        self.assertNotIn('START POST /tickets', '\n'.join(uml_content))
+
+        self.assertIn(
+            'participant "os:retrieve\\n[Retrieve Current Ticket]"',
+            uml_content,
+        )
+
     def _common_analyze_flow_and_get_content(self, flow_name: str, flow_source_file: str) -> list[str]:
         """Helper method to analyze a flow and get its UML content.
         
@@ -280,7 +442,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert key interactions and messages
         self.assertIn('"LocalFileServer" -> "sftp:listener\\n[On New or Updated Ships Log File]" : File Transfer: (Listener)', uml_content)
-        self.assertIn('"db:insert\\n[Insert Shanty]" -> "Database\\nA" : Database Change: (Insert)', uml_content)
+        self.assertIn('"db:insert\\n[Insert Shanty]" -> "Database\\nA" : Database Operation: (Insert)', uml_content)
         self.assertIn('"ibm-mq:publish\\n[Walk Plank]" -> "Queue\\nshanty-errors" : Message (shanty-errors)', uml_content)
         self.assertIn('"workday:student-transfer-credit\\n[Pay Shanty Writers]" -> "Workday" : student-transfer-credit', uml_content)
 
@@ -397,10 +559,10 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Queue\\nmy-queue-name" -> "jms:listener\\n[my-queue-name]" : Message (my-queue-name)', uml_content)
         self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : message.set payload', uml_content)
         self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : variables.variableName: var1', uml_content)
-        self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "Database\\nA" : Database Change: (Insert)', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "Database\\nA" : Database Operation: (Insert)', uml_content)
         self.assertIn(f'"Database\\nA" -[#{transaction_color}]-> "db:insert\\n[Insert var1 into db1]" : ', uml_content)
         self.assertIn(f'"ee:transform\\n[Set Var 2]" -[#{transaction_color}]> "ee:transform\\n[Set Var 2]" : variables.variableName: var2', uml_content)
-        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "Database\\nB" : Database Change: (Insert)', uml_content)
+        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "Database\\nB" : Database Operation: (Insert)', uml_content)
         self.assertIn(f'"Database\\nB" -[#{transaction_color}]-> "db:insert\\n[Insert var2 into db2]" : ', uml_content)
 
         # Assert SQL-related messages
@@ -611,7 +773,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert database operations
         self.assertIn('"db:insert\\n[Insert Subscription]" -> "db:insert\\n[Insert Subscription]" : insert.sql', uml_content)
         self.assertIn('"db:insert\\n[Insert Subscription]" -> "db:insert\\n[Insert Subscription]" : insert.input parameters', uml_content)
-        self.assertIn('"db:insert\\n[Insert Subscription]" -> "Database\\nA" : Database Change: (Insert)', uml_content)
+        self.assertIn('"db:insert\\n[Insert Subscription]" -> "Database\\nA" : Database Operation: (Insert)', uml_content)
         self.assertIn('"Database\\nA" --> "db:insert\\n[Insert Subscription]" : ', uml_content)
 
         # Assert async group and sub-flow
@@ -630,7 +792,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert database update in sub-flow
         self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.sql', uml_content)
         self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.input parameters', uml_content)
-        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "Database\\nA" : Database Change: (Update)', uml_content)
+        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "Database\\nA" : Database Operation: (Update)', uml_content)
         self.assertIn('"Database\\nA" --> "db:update\\n[Update Subscription Emails]" : ', uml_content)
 
     def test_analyzer_control_flows_cache(self):
@@ -671,7 +833,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.value: payload.id', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : output-parameters.key: 0', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : output-parameters.type: STRUCT', uml_content)
-        self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "Database\\nB" : Database Change: (Stored procedure)', uml_content)
+        self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "Database\\nB" : Database Operation: (Stored procedure)', uml_content)
         self.assertIn('"Database\\nB" --> "db:stored-procedure\\n[Convert ID to Object]" : ', uml_content)
 
         # Assert transform and queue operations
@@ -861,6 +1023,27 @@ flow [control-flows-until-successful]
                     for backend, was_called in called.items():
                         if backend != expected_backend:
                             self.assertFalse(was_called, f"{backend} should not be called for mode={mode}")
+
+    def test_mermaid_apikit_source_event_targets_first_visible_processor_not_logger(self):
+        """Mermaid APIKit router arrow should target the first rendered processor, not a skipped logger."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': r'get:\tickets:config'},
+            children=[
+                MuleFlowElement('logger', {'documentation:name': 'START GET /tickets'}),
+                MuleFlowElement('os:retrieve', {'documentation:name': 'Retrieve'}),
+            ],
+        )
+        config = copy.deepcopy(self.analyzer_properties)
+        config['analyzer_properties']['diagram_engine'] = 'mermaid'
+        generator = MermaidSequenceDiagramGenerator(configuration_properties=config)
+
+        mermaid_content = generator.generate_sequence_diagram_syntax(flow)
+        apikit_lines = [line for line in mermaid_content if 'APIKit Router' in line]
+
+        self.assertEqual(len(apikit_lines), 1)
+        self.assertIn('os_retrieve', apikit_lines[0])
+        self.assertNotIn('logger', apikit_lines[0])
 
     def test_mermaid_generator_creates_sequence_syntax(self):
         """Mermaid generator should emit sequenceDiagram syntax."""

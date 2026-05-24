@@ -29,8 +29,9 @@ The library provides several key components:
 1. `MuleFlowAnalyzer`: The main class for analyzing Mule projects
 2. `SequenceDiagramGenerator`: Generates PlantUML sequence diagrams from flow analysis
 3. `MermaidSequenceDiagramGenerator`: Generates Mermaid sequence diagram syntax from flow analysis
-4. `MuleFlowElement`: Represents individual elements in a Mule flow
-5. `PropertyHierarchy`: Manages property file hierarchy for placeholder resolution
+4. `NaturalLanguageDescriptionGenerator`: Generates structured English flow descriptions from flow analysis
+5. `MuleFlowElement`: Represents individual elements in a Mule flow
+6. `PropertyHierarchy`: Manages property file hierarchy for placeholder resolution
 
 ## Basic Usage
 
@@ -87,9 +88,11 @@ The library supports extensive configuration through the `DEFAULT_PROPERTIES` st
 
 ### Output Format
 
-- `TEXT`: Generates text-based flow descriptions
-- `SEQUENCE`: Generates sequence diagrams
-- `NATURAL`: Generates natural language descriptions
+| Format | Output | Description |
+|--------|--------|-------------|
+| `TEXT` | Printed to **console** | Indented structural tree (`tag [name]`) for debugging |
+| `SEQUENCE` | **Files** in `plantuml` or `mermaid` output directory | Sequence diagrams (PlantUML or Mermaid) |
+| `NATURAL` | **Files** in `natural.output_directory` | Deterministic structured English flow descriptions (template-based prose, not LLM-generated) |
 
 `SEQUENCE` supports `analyzer_properties.diagram_engine`:
 
@@ -175,6 +178,30 @@ analyzer.analyze_mule_flows(flow_name="my-flow")
 
 Use `mode: 'cli'` with `cli_command: 'mmdc'` and `format: 'svg'` or `png` if you want the library to render with Mermaid CLI. Source `.mmd` files are always written.
 
+### NATURAL Output
+
+`NATURAL` writes one structured English description file per flow. Output is **deterministic and template-based** — the library does not call an LLM. For polished documentation, pipe the generated file to your own LLM or editor workflow.
+
+```python
+from mule_flow_analyzer import MuleFlowAnalyzer, OutputFormat
+
+analyzer = MuleFlowAnalyzer(
+    project_path="/path/to/mule/project",
+    user_config={
+        'analyzer_properties': {
+            'output_type': OutputFormat.NATURAL,
+            'natural': {
+                'output_directory': './output/natural',
+                'file_extension': 'txt',
+            },
+        }
+    }
+)
+analyzer.analyze_mule_flows(flow_name="my-flow")
+```
+
+Respects the same `diagram_formatting_properties.verbose` flags as sequence diagrams (`processors`, `logging`, `errors`, `notes`).
+
 ### Property File Management
 
 ```python
@@ -199,7 +226,8 @@ config = analyzer.get_configuration_properties()
 analyzer.analyze_mule_flows(flow_name="my-flow")
 
 # The results will be:
-# - For TEXT output: Printed to console
+# - For TEXT output: Printed to console (structural tree)
+# - For NATURAL output: Saved as .txt (or configured extension) in natural.output_directory
 # - For SEQUENCE + PlantUML: Saved as PlantUML source and rendered files in the configured output directory
 # - For SEQUENCE + Mermaid: Saved as .mmd source, optionally rendered by Mermaid CLI
 ```

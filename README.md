@@ -6,6 +6,12 @@ Before analysis, placeholders in code will attempt to be replaced using values f
 
 Depending on your output format, text files and/or diagrams will be generated with file names based on the flow name (with special characters replaced with underscores).
 
+| Output type | Destination | Purpose |
+|-------------|-------------|---------|
+| `SEQUENCE` | Files under `plantuml` or `mermaid` output directory | Sequence diagrams |
+| `NATURAL` | Files under `natural.output_directory` | Structured English flow descriptions (deterministic templates) |
+| `TEXT` | Console (stdout) | Indented structural tree for debugging |
+
 ## Table of Contents
 
 - [Example Outputs](#example-outputs)

@@ -8,3 +8,15 @@ PROPERTY_HIERARCHY_CONFIRMATION = "Please Confirm Property File Hierarchy. (For 
 
 # Enum for the Output Format
 OutputFormat = Enum('OutputFormat', ['TEXT', 'SEQUENCE', 'NATURAL'])
+
+
+def normalize_output_format(value):
+    """Coerce string or enum values to OutputFormat."""
+    if isinstance(value, OutputFormat):
+        return value
+    if isinstance(value, str):
+        key = value.strip().upper()
+        for member in OutputFormat:
+            if member.name == key:
+                return member
+    return value

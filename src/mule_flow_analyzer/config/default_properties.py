@@ -31,6 +31,10 @@ DEFAULT_PROPERTIES = {
             'output_directory': './output/mermaid',
             'source_extension': 'mmd'
         },
+        'natural': {
+            'output_directory': './output/natural',
+            'file_extension': 'txt',
+        },
         'logging': {
             'level': 'INFO',
             # Relative to process working directory unless overridden via user_config / YAML

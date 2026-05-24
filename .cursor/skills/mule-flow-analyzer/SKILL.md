@@ -38,7 +38,7 @@ Use the **workspace root of the Mule app** as `project_path` unless the user spe
 ### 1. Clarify the task (internally or with a short question)
 
 - **Whole app vs one flow:** Does the user want every flow or a named flow?
-- **Output:** Diagrams (PlantUML PNG/SVG or Mermaid `.mmd`/SVG/PNG), printed structure (TEXT), or natural language (NATURAL)?
+- **Output:** Diagrams (PlantUML PNG/SVG or Mermaid `.mmd`/SVG/PNG), structural tree to console (TEXT), or structured English files (NATURAL)?
 - **Diagram engine:** If SEQUENCE diagrams are requested, choose `plantuml` (default and recommended). Use `mermaid` only when the user explicitly asks for Mermaid output; Mermaid support is experimental.
 - **PlantUML:** If PlantUML images are requested, choose rendering mode: `server` (HTTP PlantUML server, default), `jar` (local `java -jar plantuml.jar`), or `cli` (local `plantuml` command). If `server`, default is `http://localhost:8087/`.
 - **Mermaid:** If Mermaid is requested, default to `mode: "file"` and write `.mmd` source. Use `mode: "cli"` only when rendered images are requested and `mmdc` is available.
@@ -129,15 +129,16 @@ Merge overrides into `user_config` (the library merges with its defaults). Commo
 
 | User says                           | Set in `user_config`                                                                            |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Text / list flows / print structure | `analyzer_properties.output_type` → `OutputFormat.TEXT`                                         |
+| Text / list flows / print structure (stdout) | `analyzer_properties.output_type` → `OutputFormat.TEXT`                                         |
+| Structured English flow description (file) | `OutputFormat.NATURAL`, `natural.output_directory`, optional `natural.file_extension` |
 | Sequence diagram / UML / PlantUML via server | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "server"`, `plantuml.server`, `format`, `output_directory` |
 | Sequence diagram / UML / PlantUML via jar | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "jar"`, `plantuml.java_command`, `plantuml.jar_path`, `format`, `output_directory` |
 | Sequence diagram / UML / PlantUML via cli | `OutputFormat.SEQUENCE`, `diagram_engine: "plantuml"`, `plantuml.mode: "cli"`, `plantuml.cli_command`, `format`, `output_directory` |
 | Mermaid source diagram (experimental) | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "file"`, `mermaid.output_directory` |
 | Mermaid rendered diagram (experimental) | `OutputFormat.SEQUENCE`, `diagram_engine: "mermaid"`, `mermaid.mode: "cli"`, `mermaid.cli_command`, `format`, `output_directory` |
-| Natural language description        | `OutputFormat.NATURAL`                                                                          |
 | Use local PlantUML on 8087          | `plantuml.server`: `http://localhost:8087/`                                                     |
 | Put diagrams in a folder            | `plantuml.output_directory` or `mermaid.output_directory` (relative to cwd or absolute)          |
+| Put NATURAL descriptions in a folder | `natural.output_directory` (use `--output-dir` with `-o NATURAL` in run_analyzer.py)            |
 | Log file location                   | `analyzer_properties.logging.file` (metadata for your logging setup)                            |
 
 Example:
@@ -199,6 +200,20 @@ user_config = {
 }
 ```
 
+NATURAL example (deterministic template prose, written to file — not LLM-generated):
+
+```python
+user_config = {
+    "analyzer_properties": {
+        "output_type": OutputFormat.NATURAL,
+        "natural": {
+            "output_directory": "./docs/generated/natural",
+            "file_extension": "txt",
+        },
+    },
+}
+```
+
 Use `PropertyHierarchy` only when the user specifies an order of property files; otherwise let the analyzer discover files under `src/main/resources`.
 
 ### 3. Run
@@ -210,6 +225,7 @@ Use `PropertyHierarchy` only when the user specifies an order of property files;
 python scripts/run_analyzer.py --help
 python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE -s http://localhost:8087/
 python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE --diagram-engine mermaid --output-dir ./docs/generated/mermaid
+python scripts/run_analyzer.py -p . --flow my-flow-name -o NATURAL --output-dir ./docs/generated/natural
 ```
 
 (Use the path to `scripts/run_analyzer.py` relative to where this skill folder sits in the workspace.)
@@ -220,6 +236,8 @@ python scripts/run_analyzer.py -p . --flow my-flow-name -o SEQUENCE --diagram-en
 - Mermaid support is experimental. Prefer PlantUML for the most complete Mule sequence diagram output.
 - Mermaid `file` mode writes `.mmd` source without extra dependencies; Mermaid `cli` mode requires `mmdc`.
 - Mermaid does not support PlantUML actor icons, `skinparam`, colored arrows/groups/notes, or the generated PlantUML legend.
+- **NATURAL** writes deterministic template-based English descriptions to `natural.output_directory`. It does not call an LLM; pipe output to your own tools for polished docs.
+- **TEXT** prints a structural element tree to stdout only (not files).
 - In `server` mode, only generated UML/diagrams leave the machine if you point `server` at a remote URL.
 - The library does not configure Python `logging` automatically; `logging.file` in config is metadata for your app or CLI.
 - Flow analysis is file-based; it does not drive Anypoint Studio.

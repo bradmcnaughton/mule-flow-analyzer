@@ -27,7 +27,7 @@ analyzer_properties:
     jar_path: "./tools/plantuml.jar" # Only used in mode: jar
     cli_command: "plantuml" # Only used in mode: cli
     format: "png"
-    output_directory: "./custom-output/diagrams" # Path to the directory where output (diagrams, text) will be saved
+    output_directory: "./custom-output/diagrams" # Path to the directory where PlantUML/Mermaid output will be saved
 
   mermaid: # Experimental sequence diagram output
     mode: "file" # "file" writes .mmd only, "cli" renders with Mermaid CLI
@@ -35,6 +35,10 @@ analyzer_properties:
     format: "svg" # Only used in mode: cli
     output_directory: "./custom-output/mermaid"
     source_extension: "mmd"
+
+  natural: # Structured English flow descriptions (template-based, not LLM)
+    output_directory: "./custom-output/natural"
+    file_extension: "txt"
 
   logging:
     level: "INFO"

@@ -8,9 +8,10 @@ sequence diagrams or natural language descriptions of each flow.
 from .analyzer.mule_flow_analyzer import MuleFlowAnalyzer, PropertyHierarchy
 from .analyzer.sequence_diagram_generator import SequenceDiagramGenerator
 from .analyzer.mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
+from .analyzer.natural_language_description_generator import NaturalLanguageDescriptionGenerator
 from .analyzer.mule_flow_element import MuleFlowElement
 from .config.default_properties import DEFAULT_PROPERTIES
-from .config.constants import OutputFormat
+from .config.constants import OutputFormat, normalize_output_format
 from .exceptions import (
     ConfigurationError,
     DiagramGenerationError,
@@ -29,9 +30,11 @@ __all__ = [
     'PropertyHierarchy',
     'SequenceDiagramGenerator',
     'MermaidSequenceDiagramGenerator',
+    'NaturalLanguageDescriptionGenerator',
     'MuleFlowElement',
     'DEFAULT_PROPERTIES',
     'OutputFormat',
+    'normalize_output_format',
     'MuleFlowException',
     'MuleFlowParsingException',
     'MuleFlowValidationException',

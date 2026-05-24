@@ -103,6 +103,43 @@ class SequenceDiagramGenerator:
 
         return cleaned_string
 
+    def first_diagram_participant_child(self, flow: MuleFlowElement) -> Optional[MuleFlowElement]:
+        """
+        Return the first flow child that would be rendered in a sequence diagram.
+
+        Skips control-flow boundary tags and logging processors when verbose.logging is off.
+        Used so APIKit synthetic source events target a real participant, not a skipped logger.
+        """
+        include_logging = self.properties['diagram_formatting_properties']['verbose']['logging']
+        for child in flow.children:
+            if child.tag in CONTROL_FLOW_BOUNDARY_TAGS:
+                continue
+            if child.tag in LOGGING_PROCESSORS and not include_logging:
+                continue
+            return child
+        return None
+
+    def mule_target_variable_value(self, element: MuleFlowElement) -> Optional[str]:
+        """
+        Return the Mule ``target`` attribute value when the processor stores its output in a variable.
+
+        This is unrelated to sequence-diagram external ``source_or_target="target"`` participants.
+        """
+        raw = element.attributes.get('target')
+        if raw is None:
+            return None
+        value = str(raw).strip()
+        if not value:
+            return None
+        return self.remove_expression_brackets(value)
+
+    def mule_target_variable_save_label(self, element: MuleFlowElement) -> Optional[str]:
+        """Label for a self-arrow when a processor uses the Mule ``target`` attribute."""
+        variable = self.mule_target_variable_value(element)
+        if variable is None:
+            return None
+        return f"Save Output to variable: {variable}"
+
     def pretty_participant(self, element: MuleFlowElement, source_or_target: str = "source") -> Tuple[Optional[str], Optional[str], str]:
         """
         Formats a Mule flow element as a PlantUML participant.
@@ -143,7 +180,7 @@ class SequenceDiagramGenerator:
                 else:
                     db_name = None
                 alias = f"Database\\n{db_name}".strip()
-                description = f"Database Change: ({(element.tag.split(':')[-1]).replace('-', ' ').capitalize()})"
+                description = f"Database Operation: ({(element.tag.split(':')[-1]).replace('-', ' ').capitalize()})"
                 class_name = "database"
             elif element.tag.startswith('http'):
                 # web   
@@ -611,6 +648,16 @@ class SequenceDiagramGenerator:
                 else:
                     # Set it to None to track we are past the event source
                     tracking_vars['event_source'] = None
+
+                target_variable_label = self.mule_target_variable_save_label(element)
+                if target_variable_label:
+                    content.append(sequence_line_formatter(
+                        tracking_vars['current_actor'],
+                        tracking_vars['current_actor'],
+                        target_variable_label,
+                        arrow_style=arrow_style,
+                        tracking_vars=tracking_vars,
+                    ))
                         
                 # Update the previous actor for children
                 tracking_vars['previous_actor'] = tracking_vars['current_actor']
@@ -785,20 +832,21 @@ class SequenceDiagramGenerator:
            
             # Add the event source line to the diagram
             
-            # Special case for APIKit flows
+            # Special case for APIKit flows: route to first diagram-visible processor, not skipped loggers
             if event_source == 'apikit':
-                target_actor = str(flow.children[0] if flow.children else None)
+                first_participant = self.first_diagram_participant_child(flow)
+                target_actor = str(first_participant) if first_participant else None
             else:
                 target_actor = str(event_source)
-            
-            # Create the event source line
-            content.append("'source event")
-            content.append(sequence_line_formatter(
-                tracking_vars['alias_reference'].get(str(event_source), str(event_source)), 
-                target_actor, 
-                event_source_description, 
-                self.properties['diagram_formatting_properties']['arrows']['flow'],
-                tracking_vars=tracking_vars))
+
+            if target_actor:
+                content.append("'source event")
+                content.append(sequence_line_formatter(
+                    tracking_vars['alias_reference'].get(str(event_source), str(event_source)),
+                    target_actor,
+                    event_source_description,
+                    self.properties['diagram_formatting_properties']['arrows']['flow'],
+                    tracking_vars=tracking_vars))
 
         # Even though the Event Source has started the diagram, we can add the title now
         # And use it as a flag to prevent the primary flow from being added as a group

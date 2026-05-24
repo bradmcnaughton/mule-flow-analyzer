@@ -9,10 +9,11 @@ import re
 import copy
 import logging
 from ..config.default_properties import DEFAULT_PROPERTIES
-from ..config.constants import OutputFormat
+from ..config.constants import OutputFormat, normalize_output_format
 from .mule_flow_element import MuleFlowElement
 from .sequence_diagram_generator import SequenceDiagramGenerator
 from .mermaid_sequence_diagram_generator import MermaidSequenceDiagramGenerator
+from .natural_language_description_generator import NaturalLanguageDescriptionGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,9 @@ class MuleFlowAnalyzer:
             self.configuration_properties = copy.deepcopy(DEFAULT_PROPERTIES)
 
         # Output Type Flag - will be replaced with actual input flag later
-        self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
+        self.output_format = normalize_output_format(
+            self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
+        )
 
         # Tags to skip when printing the flow structure
         self.skip_tags = ["flow-ref", "logger", "tracing:set-logging-variable"]
@@ -668,6 +671,8 @@ class MuleFlowAnalyzer:
                 self.print_flow_structures(xml_file, flow_name)
             elif self.output_format == OutputFormat.SEQUENCE:
                 self.generate_sequence_diagram(xml_file, flow_name)
+            elif self.output_format == OutputFormat.NATURAL:
+                self.generate_natural_description(xml_file, flow_name)
 
     def _get_sequence_diagram_generator(self):
         diagram_engine = self.configuration_properties.get('analyzer_properties', {}).get('diagram_engine', 'plantuml')
@@ -718,7 +723,28 @@ class MuleFlowAnalyzer:
             
             if image_file is not None:
                 logger.info(f"Generated diagram: {image_file}")
-            
+
+    def generate_natural_description(self, xml_file: str, flow_name: str = None):
+        """
+        Generate structured English descriptions for Mule flows in the specified XML file.
+
+        Args:
+            xml_file (str): The path to the XML file containing the Mule flows, relative to the project root.
+            flow_name (str, optional): The name of a specific flow to describe. If None, describes all flows in the file.
+        """
+        normalized_xml_file = self._normalize_project_file_key(xml_file)
+        mule_flow_element = self.project_files[normalized_xml_file]
+        flows = mule_flow_element.get_flows(flow_name)
+
+        description_generator = NaturalLanguageDescriptionGenerator(self.configuration_properties)
+
+        for flow in flows:
+            current_flow_name = flow.attributes.get('name')
+            logger.info(f"Processing natural language description for flow: {current_flow_name}")
+            description_lines = description_generator.generate_description(flow)
+            output_file = description_generator.write_output(description_lines, current_flow_name)
+            logger.info(f"Generated natural language description: {output_file}")
+
     def get_configuration_properties(self) -> dict:
         """
         Get the current configuration properties.
@@ -740,6 +766,8 @@ class MuleFlowAnalyzer:
         """
         self.configuration_properties = self._recursive_merge(DEFAULT_PROPERTIES, config)
         # Update output format since it depends on configuration properties
-        self.output_format = self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
+        self.output_format = normalize_output_format(
+            self.configuration_properties.get('analyzer_properties', {}).get('output_type', OutputFormat.SEQUENCE)
+        )
 
     

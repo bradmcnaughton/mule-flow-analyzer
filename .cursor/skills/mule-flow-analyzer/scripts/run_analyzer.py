@@ -105,10 +105,15 @@ def main() -> int:
                 "mode": args.mermaid_mode,
                 "cli_command": args.mermaid_cli,
             },
+            "natural": {},
         }
     }
     if args.output_dir:
-        user_config["analyzer_properties"][args.diagram_engine]["output_directory"] = args.output_dir
+        output_type = args.output_type
+        if output_type == OutputFormat.NATURAL:
+            user_config["analyzer_properties"]["natural"]["output_directory"] = args.output_dir
+        else:
+            user_config["analyzer_properties"][args.diagram_engine]["output_directory"] = args.output_dir
 
     analyzer = MuleFlowAnalyzer(project_path=project, property_files=None, user_config=user_config)
     analyzer.analyze_mule_flows(flow_name=args.flow)

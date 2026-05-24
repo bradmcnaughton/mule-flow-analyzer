@@ -143,9 +143,14 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
 
         if event_source_alias:
             source_alias = record(event_source_alias, 'actor', role='consumer')
-            target_label = str(flow.children[0]) if event_source == 'apikit' and flow.children else str(event_source)
-            previous_actor = record(target_label, role='mule')
-            content.append(self._format_message(source_alias, previous_actor, event_source_description, 'flow'))
+            if event_source == 'apikit':
+                first_participant = self.first_diagram_participant_child(flow)
+                target_label = str(first_participant) if first_participant else None
+            else:
+                target_label = str(event_source)
+            if target_label:
+                previous_actor = record(target_label, role='mule')
+                content.append(self._format_message(source_alias, previous_actor, event_source_description, 'flow'))
 
         PreviousActor = Union[str, List[str]]
         transaction_stack: List[str] = []
@@ -308,6 +313,15 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
                     )
                     content.append(self._format_message(current_alias, external_alias, target_description, 'flow'))
                     content.append(self._format_message(external_alias, current_alias, None, 'return'))
+
+                target_variable_label = self.mule_target_variable_save_label(element)
+                if target_variable_label:
+                    content.append(self._format_message(
+                        current_alias,
+                        current_alias,
+                        target_variable_label,
+                        'flow',
+                    ))
 
                 current_previous_actor = current_alias
 
