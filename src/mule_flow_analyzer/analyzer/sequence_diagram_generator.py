@@ -70,6 +70,26 @@ class SequenceDiagramGenerator:
         # Escape any double quotes and convert line breaks to \n
         return input_string.replace('"', '\\"').replace('\n', '\\n')
 
+    def sanitize_plantuml_title_text(self, title: str) -> str:
+        """
+        Make a Mule flow name safe for PlantUML ``title`` lines.
+
+        APIKit names use backslash path separators (e.g. ``get:\\tickets:...``). PlantUML
+        treats ``\\t``, ``\\n``, and similar sequences as control characters in titles on
+        both single-line and ``title``/``end title`` blocks. ``%backslash()`` only works on
+        recent servers. Substituting ``/`` preserves readability without escape issues.
+        """
+        if not title:
+            return title
+        return title.replace('\\', '/')
+
+    def append_plantuml_title(self, content: List[str], title: Optional[str]) -> None:
+        """Append a PlantUML title for the diagram."""
+        if not title:
+            content.append("title Unnamed Flow")
+            return
+        content.append(f"title {self.sanitize_plantuml_title_text(title)}")
+
     def clean_uml_syntax(self, input_string:str):
         cleaned_string = input_string.replace("\"", "").replace(" [", "\\n[")
         if cleaned_string:
@@ -253,6 +273,20 @@ class SequenceDiagramGenerator:
 
         return alias, description, class_name
 
+    _CDATA_PATTERN = re.compile(r'<!\[CDATA\[(.*?)\]\]>', re.DOTALL)
+    _PROCESS_CONTENT_MAX_LENGTH = 20
+
+    def format_process_content(self, content: str) -> str:
+        """Normalize XML element body text for self-referential process arrows."""
+        text = (content or '').strip()
+        if not text:
+            return ''
+        text = self._CDATA_PATTERN.sub(lambda match: match.group(1), text).strip()
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) > self._PROCESS_CONTENT_MAX_LENGTH:
+            return f"{text[:self._PROCESS_CONTENT_MAX_LENGTH]}..."
+        return text
+
     def attributes_to_activities(self, element:MuleFlowElement, activities:list, process_prefix:str=None) -> list:
         if len(element.attributes) > 0:
             # Attributes of the XML are mapped to activities
@@ -262,11 +296,15 @@ class SequenceDiagramGenerator:
                 activities.append(f"{key}: {value}")
         else:
             if element.content:
-                # Tag of the XML represents the activity
+                # Tag of the XML represents the activity; body text is shown when present
                 label = element.tag.split(":")[-1].replace('-', ' ')
                 if process_prefix:
                     label = f"{process_prefix}.{label}"
-                activities.append(label)
+                value = self.format_process_content(element.content)
+                if value:
+                    activities.append(f"{label}: {value}")
+                else:
+                    activities.append(label)
 
         # Add the children process tags as well
         if len(element.processes) > 0:
@@ -549,9 +587,15 @@ class SequenceDiagramGenerator:
 
                 
                 # Append the incoming call line ----------------------------->
-                # (Skip if event source)
-                if not tracking_vars['event_source'] and len(tracking_vars['parallel_sources']) == 0:                                   
-                    content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
+                # (Skip if event source; skip redundant same-participant hops with no label)
+                if not tracking_vars['event_source'] and len(tracking_vars['parallel_sources']) == 0:
+                    same_participant = (
+                        previous_actor is not None
+                        and self.clean_uml_syntax(previous_actor)
+                        == self.clean_uml_syntax(tracking_vars['current_actor'])
+                    )
+                    if not same_participant:
+                        content.append(sequence_line_formatter(previous_actor, tracking_vars['current_actor'], arrow_style=arrow_style, tracking_vars=tracking_vars))
                 elif len(tracking_vars['parallel_sources']) > 0:
                     # Add the parallel sources consolidating
                     for parallel_source in tracking_vars['parallel_sources']:
@@ -850,10 +894,7 @@ class SequenceDiagramGenerator:
 
         # Even though the Event Source has started the diagram, we can add the title now
         # And use it as a flag to prevent the primary flow from being added as a group
-        if flow.attributes.get('name'):
-            content.append(f"title {flow.attributes.get('name')}")
-        else:
-            content.append("title Unnamed Flow")
+        self.append_plantuml_title(content, flow.attributes.get('name'))
 
         # Recursively process the flow elements starting with the root flow
         process_element(flow, content, tracking_vars)

@@ -39,6 +39,12 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
         label = re.sub(r'\s+', ' ', label).strip()
         return label
 
+    def clean_mermaid_title(self, title: str) -> str:
+        """Match PlantUML title sanitization for APIKit flow names."""
+        if not title:
+            return title
+        return self.clean_mermaid_label(self.sanitize_plantuml_title_text(title))
+
     def clean_mermaid_note(self, input_string: str) -> str:
         note = str(input_string or '').replace('\r\n', '\n').replace('\r', '\n')
         return note.replace('\n', '<br/>').replace(':', '&#58;')
@@ -105,7 +111,7 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
         participant_roles: Dict[str, str] = {}
         content: List[str] = ["sequenceDiagram"]
         flow_name = flow.attributes.get('name') or 'Unnamed Flow'
-        content.append(f"title {self.clean_mermaid_label(flow_name)}")
+        content.append(f"title {self.clean_mermaid_title(flow_name)}")
 
         def record(label: str, participant_type: str = 'participant', role: str = 'mule') -> str:
             clean_label = self.clean_mermaid_label(label)
@@ -165,6 +171,8 @@ class MermaidSequenceDiagramGenerator(SequenceDiagramGenerator):
             sources = source_aliases if isinstance(source_aliases, list) else [source_aliases]
             arrow_style = 'parallel' if isinstance(source_aliases, list) else 'flow'
             for source_alias in sources:
+                if source_alias == target_alias and not description:
+                    continue
                 content.append(self._format_message(source_alias, target_alias, description, arrow_style))
 
         def note_actor(actor: PreviousActor) -> str:

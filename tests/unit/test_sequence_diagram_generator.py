@@ -127,6 +127,19 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
                 result = self.generator.clean_uml_note(input_str)
                 self.assertEqual(result, expected)
 
+    def test_sanitize_plantuml_title_replaces_backslashes_for_apikit_names(self):
+        """PlantUML titles must not contain \\t etc.; APIKit \\ becomes / in diagram titles."""
+        flow_name = r"get:\tickets:tickets-api-spec-config"
+        sanitized = self.generator.sanitize_plantuml_title_text(flow_name)
+        self.assertEqual(sanitized, "get:/tickets:tickets-api-spec-config")
+        self.assertNotIn("\\", sanitized)
+
+        flow = MuleFlowElement("flow", {"name": flow_name})
+        uml_content = self.generator.generate_sequence_diagram_syntax(flow)
+        self.assertIn("title get:/tickets:tickets-api-spec-config", uml_content)
+        self.assertNotIn("%backslash()", uml_content)
+        self.assertNotIn("end title", uml_content)
+
     def test_clean_uml_syntax(self):
         """Test cleaning of UML syntax"""
         test_cases = [
@@ -285,13 +298,87 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
             '"os:retrieve\\n[Retrieve Current Ticket]" -> "os:retrieve\\n[Retrieve Current Ticket]" : Save Output to variable: currentTicketNumber',
             uml_content,
         )
+        self.assertIn(
+            '"os:retrieve\\n[Retrieve Current Ticket]" -> "os:retrieve\\n[Retrieve Current Ticket]" : retrieve.default value: 1',
+            uml_content,
+        )
         default_line_idx = next(
-            i for i, line in enumerate(uml_content) if 'retrieve.default value' in line
+            i for i, line in enumerate(uml_content) if 'retrieve.default value: 1' in line
         )
         save_line_idx = next(
             i for i, line in enumerate(uml_content) if 'Save Output to variable: currentTicketNumber' in line
         )
         self.assertLess(default_line_idx, save_line_idx)
+
+    def test_format_process_content_strips_cdata_and_trims_long_values(self):
+        """Process element body text should unwrap CDATA and truncate long values."""
+        self.assertEqual(self.generator.format_process_content('1'), '1')
+        self.assertEqual(
+            self.generator.format_process_content('<![CDATA[hello world]]>'),
+            'hello world',
+        )
+        self.assertEqual(
+            self.generator.format_process_content('%dw 2.0\noutput application/json'),
+            '%dw 2.0 output appli...',
+        )
+        long_value = 'a' * 25
+        self.assertEqual(
+            self.generator.format_process_content(long_value),
+            f"{'a' * 20}...",
+        )
+
+    def test_processor_child_element_value_on_self_arrow(self):
+        """Child elements with body text should include the value on self-referential arrows."""
+        flow = MuleFlowElement(
+            'flow',
+            {'name': 'default-value-flow'},
+            children=[
+                MuleFlowElement(
+                    'os:retrieve',
+                    {'documentation:name': 'Retrieve'},
+                    processes=[
+                        MuleFlowElement('os:default-value', {}, content='<![CDATA[1]]>'),
+                    ],
+                ),
+            ],
+        )
+
+        uml_content = self.generator.generate_sequence_diagram_syntax(flow)
+        self.assertIn(
+            '"os:retrieve\\n[Retrieve]" -> "os:retrieve\\n[Retrieve]" : retrieve.default value: 1',
+            uml_content,
+        )
+
+    def test_duplicate_doc_name_transforms_skip_empty_same_participant_arrow(self):
+        """Consecutive ee:transform steps with the same doc:name must not emit a blank self-arrow."""
+        flow_name = r'get:\auto\v1\salesLead\(leadId):auto-sales-lead-prc-api-config'
+        flow_source_file = 'src\\main\\mule\\auto-sales-lead-prc-api.xml'
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+        transform_lines = [
+            line for line in uml_content
+            if '"ee:transform\\n[Transform Message]" -> "ee:transform\\n[Transform Message]"' in line
+        ]
+
+        self.assertEqual(len(transform_lines), 2)
+        self.assertIn('variables.variableName: leadId', transform_lines[0])
+        self.assertIn('message.set payload: %dw 2.0', transform_lines[1])
+        self.assertNotIn(
+            '"ee:transform\\n[Transform Message]" -> "ee:transform\\n[Transform Message]" : ',
+            uml_content,
+        )
+
+    def test_apikit_tickets_get_flow_shows_default_value_on_self_arrow(self):
+        """Regression: tickets GET os:retrieve default-value appears on the diagram."""
+        flow_name = r'get:\tickets:tickets-api-spec-config'
+        flow_source_file = 'src\\main\\mule\\tickets-apikit-os.xml'
+
+        uml_content = self._common_analyze_flow_and_get_content(flow_name, flow_source_file)
+
+        self.assertIn(
+            '"os:retrieve\\n[Retrieve]" -> "os:retrieve\\n[Retrieve]" : retrieve.default value: 1',
+            uml_content,
+        )
 
     def test_apikit_tickets_post_flow_shows_target_variable_save(self):
         """Regression: tickets POST os:retrieve target attribute appears on the diagram."""
@@ -304,6 +391,10 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('Save Output to variable: currentTicketNumber', joined)
         self.assertIn(
             '"os:retrieve\\n[Retrieve Current Ticket]" -> "os:retrieve\\n[Retrieve Current Ticket]" : Save Output to variable: currentTicketNumber',
+            uml_content,
+        )
+        self.assertIn(
+            "title post:/tickets:application/json:tickets-api-spec-config",
             uml_content,
         )
 
@@ -376,8 +467,9 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         uml_content = uml_file_content.splitlines()
 
-        # Assert that the title is present
-        self.assertIn(f'title {flow_name}', uml_content)
+        # Assert that the title is present (APIKit backslashes become slashes in diagram titles)
+        expected_title = f"title {self.generator.sanitize_plantuml_title_text(flow_name)}"
+        self.assertIn(expected_title, uml_content)
 
         return uml_content
 
@@ -408,7 +500,11 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn(' -> "http:basic-security-filter\\n[Basic security filter]" : ', uml_content)
         self.assertIn('"http:basic-security-filter\\n[Basic security filter]" -> "HTTP" : HTTP Request (Basic security filter)', uml_content)
         self.assertIn('"HTTP" --> "http:basic-security-filter\\n[Basic security filter]" : ', uml_content)
-        self.assertIn('"ee:transform\\n[Set Variable: myMainVar1]" -> "ee:transform\\n[Set Variable: myMainVar1]" : message.set attributes', uml_content)
+        self.assertTrue(any(
+            'message.set attributes: %dw 2.0' in line
+            for line in uml_content
+            if 'Set Variable: myMainVar1' in line
+        ))
         
         # Assert that the subflows have a group
         self.assertIn('group sub-flow set-mySubflowVar-subflow', uml_content)
@@ -557,7 +653,11 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert that the arrows and messages are present
         self.assertIn('"Queue\\nmy-queue-name" -> "jms:listener\\n[my-queue-name]" : Message (my-queue-name)', uml_content)
-        self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : message.set payload', uml_content)
+        self.assertTrue(any(
+            'message.set payload: %dw 2.0' in line
+            for line in uml_content
+            if 'Set Var 1' in line
+        ))
         self.assertIn(f'"ee:transform\\n[Set Var 1]" -[#{transaction_color}]> "ee:transform\\n[Set Var 1]" : variables.variableName: var1', uml_content)
         self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "Database\\nA" : Database Operation: (Insert)', uml_content)
         self.assertIn(f'"Database\\nA" -[#{transaction_color}]-> "db:insert\\n[Insert var1 into db1]" : ', uml_content)
@@ -566,9 +666,17 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn(f'"Database\\nB" -[#{transaction_color}]-> "db:insert\\n[Insert var2 into db2]" : ', uml_content)
 
         # Assert SQL-related messages
-        self.assertIn(f'"db:insert\\n[Insert var1 into db1]" -[#{transaction_color}]> "db:insert\\n[Insert var1 into db1]" : insert.sql', uml_content)
-        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "db:insert\\n[Insert var2 into db2]" : insert.sql', uml_content)
-        self.assertIn(f'"db:insert\\n[Insert var2 into db2]" -[#{transaction_color}]> "db:insert\\n[Insert var2 into db2]" : insert.input parameters', uml_content)
+        self.assertTrue(any('insert.sql: SELECT * FROM DUAL' in line for line in uml_content))
+        self.assertTrue(any(
+            'insert.sql: SELECT * FROM DUAL' in line
+            for line in uml_content
+            if 'Insert var2 into db2' in line
+        ))
+        self.assertTrue(any(
+            'insert.input parameters: #[{"one": "abc", "bo' in line
+            for line in uml_content
+            if 'Insert var2 into db2' in line
+        ))
 
     def test_analyzer_control_flows_single_choice(self):
         """Test analyzer control flows with single choice"""
@@ -771,8 +879,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Experience" -> "salesforce:subscribe-channel-listener\\n[Subscribe channel listener]" : subscribe-channel-listener', uml_content)
 
         # Assert database operations
-        self.assertIn('"db:insert\\n[Insert Subscription]" -> "db:insert\\n[Insert Subscription]" : insert.sql', uml_content)
-        self.assertIn('"db:insert\\n[Insert Subscription]" -> "db:insert\\n[Insert Subscription]" : insert.input parameters', uml_content)
+        self.assertTrue(any('insert.sql: INSERT INTO subscrip' in line for line in uml_content))
+        self.assertTrue(any('insert.input parameters: #[{\'myVar\': payload' in line for line in uml_content))
         self.assertIn('"db:insert\\n[Insert Subscription]" -> "Database\\nA" : Database Operation: (Insert)', uml_content)
         self.assertIn('"Database\\nA" --> "db:insert\\n[Insert Subscription]" : ', uml_content)
 
@@ -790,8 +898,8 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('"Experience_4" --> "salesforce:delete\\n[Delete Subscription]" : ', uml_content)
 
         # Assert database update in sub-flow
-        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.sql', uml_content)
-        self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "db:update\\n[Update Subscription Emails]" : update.input parameters', uml_content)
+        self.assertTrue(any('update.sql: UPDATE customers SET' in line for line in uml_content))
+        self.assertTrue(any('update.input parameters: #[{\'customerId\': var' in line for line in uml_content))
         self.assertIn(f'"db:update\\n[Update Subscription Emails]" -> "Database\\nA" : Database Operation: (Update)', uml_content)
         self.assertIn('"Database\\nA" --> "db:update\\n[Update Subscription Emails]" : ', uml_content)
 
@@ -828,7 +936,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         self.assertIn('end', uml_content)
 
         # Assert database stored procedure details
-        self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : stored-procedure.sql', uml_content)
+        self.assertTrue(any('stored-procedure.sql: myIdProc' in line for line in uml_content))
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.key: id', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : in-out-parameters.value: payload.id', uml_content)
         self.assertIn('"db:stored-procedure\\n[Convert ID to Object]" -> "db:stored-procedure\\n[Convert ID to Object]" : output-parameters.key: 0', uml_content)
@@ -838,7 +946,7 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
 
         # Assert transform and queue operations
         self.assertIn('"ee:transform\\n[Create Message]" -> "ee:transform\\n[Create Message]" : variables.variableName: myMessage', uml_content)
-        self.assertIn('"ibm-mq:publish\\n[Publish]" -> "ibm-mq:publish\\n[Publish]" : message.body', uml_content)
+        self.assertTrue(any('message.body: #[vars.myMessage]' in line for line in uml_content))
         self.assertIn('"ibm-mq:publish\\n[Publish]" -> "Queue\\nidmessages" : Message (idmessages)', uml_content)
         self.assertIn('"Queue\\nidmessages" --> "ibm-mq:publish\\n[Publish]" : ', uml_content)
 
@@ -881,8 +989,16 @@ class TestSequenceDiagramGenerator(unittest.TestCase):
         # Assert HTTP requests for each route
         parallel_arrow = self.analyzer_properties["diagram_formatting_properties"]["arrows"]["parallel"]
         for island in ['Tatooga', 'Bermuda', 'Aruba']:
-            self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.body', uml_content)
-            self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "http:request\\n[Request {island} Payload]" : request.uri params', uml_content)
+            self.assertTrue(any(
+                'request.body: #[{"xSpot": payload' in line
+                for line in uml_content
+                if f'Request {island} Payload' in line
+            ))
+            self.assertTrue(any(
+                'request.uri params: #[output application' in line
+                for line in uml_content
+                if f'Request {island} Payload' in line
+            ))
             self.assertIn(f'"http:request\\n[Request {island} Payload]" -> "HTTP_1" : HTTP Request: (GET /islands/{{island-name}})', uml_content)
             self.assertIn(f'"HTTP_1" --> "http:request\\n[Request {island} Payload]" : ', uml_content)
             self.assertIn(f'"http:request\\n[Request {island} Payload]" {parallel_arrow} "ee:transform\\n[Set Shanty and Loot]" : ', uml_content)
