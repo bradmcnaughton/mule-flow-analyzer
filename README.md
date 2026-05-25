@@ -133,7 +133,7 @@ pip install mule-flow-analyzer
 To install a specific version:
 
 ```bash
-pip install mule-flow-analyzer==1.0.0
+pip install mule-flow-analyzer==1.1.0
 ```
 
 For development, clone the repository and install in editable mode with test dependencies:

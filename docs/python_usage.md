@@ -13,7 +13,7 @@ pip install mule-flow-analyzer
 Pin a version if needed:
 
 ```bash
-pip install mule-flow-analyzer==1.0.0
+pip install mule-flow-analyzer==1.1.0
 ```
 
 Package page: https://pypi.org/project/mule-flow-analyzer/
